@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { minutesSinceMidnight, toDateKey } from '../../domain/dates';
 import { indexOverrides, occurrencesForDay } from '../../domain/recurrence';
 import { useAppState } from '../../state/store';
 import { formatDayHeading } from '../format';
+import { DatePickerSheet } from '../sheets/DatePickerSheet';
 import { DaySection } from './DaySection';
 import { useInfiniteDays } from './useInfiniteDays';
 
@@ -10,6 +11,7 @@ export function CalendarScreen() {
   const state = useAppState();
   const today = toDateKey(state.now);
   const { days, visibleDate, scrollRef, onScroll, goTo } = useInfiniteDays(today);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Layout effect, not effect: positioning after the first paint shows the top of
   // the window for one frame before jumping to now.
@@ -39,6 +41,9 @@ export function CalendarScreen() {
         >
           Today
         </button>
+        <button className="button button--small" onClick={() => setPickerOpen(true)}>
+          Go to date
+        </button>
       </header>
 
       <div className="calendar__scroll" ref={scrollRef} onScroll={onScroll}>
@@ -57,6 +62,17 @@ export function CalendarScreen() {
           />
         ))}
       </div>
+
+      {pickerOpen && (
+        <DatePickerSheet
+          initialDate={visibleDate}
+          onClose={() => setPickerOpen(false)}
+          onPick={(date) => {
+            setPickerOpen(false);
+            goTo(date, 8 * 60);
+          }}
+        />
+      )}
     </div>
   );
 }

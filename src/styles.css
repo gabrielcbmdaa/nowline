@@ -394,3 +394,48 @@ body {
   font-size: 13px;
   border-radius: 10px;
 }
+
+.month__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.month__name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.month__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+
+.month__weekday {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-bottom: 4px;
+}
+
+.month__day {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.month__day--outside {
+  color: var(--text-dim);
+  opacity: 0.45;
+}
+
+.month__day--current {
+  background: var(--accent);
+  color: #fff;
+}
