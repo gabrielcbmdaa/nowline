@@ -3,6 +3,7 @@ import type { Project } from '../domain/types';
 import { loadAll, setTab, startClock, useAppState } from '../state/store';
 import { Fab } from './Fab';
 import { TopTabs } from './TopTabs';
+import { CalendarScreen } from './calendar/CalendarScreen';
 import { ProjectsScreen } from './projects/ProjectsScreen';
 import { ProjectEditorSheet } from './sheets/ProjectEditorSheet';
 
@@ -25,7 +26,7 @@ export function App() {
     <div className="app">
       <TopTabs active={state.tab} onChange={setTab} />
       <main className="screen">
-        {state.tab === 'calendar' && <p className="placeholder">Calendar</p>}
+        {state.tab === 'calendar' && <CalendarScreen />}
         {state.tab === 'summary' && <p className="placeholder">Summary</p>}
         {state.tab === 'projects' && (
           <ProjectsScreen onEdit={(project) => setSheet({ kind: 'project', project })} />
