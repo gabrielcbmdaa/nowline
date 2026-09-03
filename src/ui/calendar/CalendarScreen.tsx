@@ -1,27 +1,24 @@
-import { useMemo, useRef, useState } from 'react';
-import { addDays, toDateKey } from '../../domain/dates';
-import { DAY_HEIGHT } from '../../domain/geometry';
+import { useLayoutEffect, useMemo } from 'react';
+import { minutesSinceMidnight, toDateKey } from '../../domain/dates';
 import { indexOverrides, occurrencesForDay } from '../../domain/recurrence';
 import { useAppState } from '../../state/store';
 import { formatDayHeading } from '../format';
 import { DaySection } from './DaySection';
-
-/** Days kept mounted at once; 365 would be half a million pixels tall. */
-export const WINDOW_DAYS = 7;
-
-export function buildWindow(centerDate: string): string[] {
-  const half = Math.floor(WINDOW_DAYS / 2);
-  return Array.from({ length: WINDOW_DAYS }, (_, index) =>
-    addDays(centerDate, index - half),
-  );
-}
+import { useInfiniteDays } from './useInfiniteDays';
 
 export function CalendarScreen() {
   const state = useAppState();
   const today = toDateKey(state.now);
-  const [days] = useState(() => buildWindow(today));
-  const [visibleDate, setVisibleDate] = useState(today);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { days, visibleDate, scrollRef, onScroll, goTo } = useInfiniteDays(today);
+
+  // Layout effect, not effect: positioning after the first paint shows the top of
+  // the window for one frame before jumping to now.
+  useLayoutEffect(() => {
+    // Open on the current time rather than at midnight.
+    goTo(today, minutesSinceMidnight(state.now, today));
+    // Only on mount: re-running this would yank the scroll out from under the user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const overrideIndex = useMemo(
     () => indexOverrides(state.overrides),
@@ -32,23 +29,19 @@ export function CalendarScreen() {
     [state.projects],
   );
 
-  function handleScroll() {
-    const element = scrollRef.current;
-    if (!element) return;
-    const index = Math.min(
-      days.length - 1,
-      Math.max(0, Math.floor((element.scrollTop + 1) / DAY_HEIGHT)),
-    );
-    if (days[index] !== visibleDate) setVisibleDate(days[index]);
-  }
-
   return (
     <div className="calendar">
       <header className="calendar__bar">
         <span className="calendar__date">{formatDayHeading(visibleDate, state.now)}</span>
+        <button
+          className="button button--small"
+          onClick={() => goTo(toDateKey(state.now), minutesSinceMidnight(state.now, toDateKey(state.now)))}
+        >
+          Today
+        </button>
       </header>
 
-      <div className="calendar__scroll" ref={scrollRef} onScroll={handleScroll}>
+      <div className="calendar__scroll" ref={scrollRef} onScroll={onScroll}>
         {days.map((date) => (
           <DaySection
             key={date}
