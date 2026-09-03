@@ -14,6 +14,8 @@ export type AppState = {
   overrides: BlockOverride[];
   /** Advanced by the clock tick; every live-growing block reads it. */
   now: Date;
+  /** The day currently on screen; the add button creates blocks here. */
+  visibleDate: string;
 };
 
 /** Everything fits in memory: a year of blocks is well under a megabyte. */
@@ -24,6 +26,7 @@ let state: AppState = {
   plans: [],
   overrides: [],
   now: new Date(),
+  visibleDate: toDateKey(new Date()),
 };
 
 const listeners = new Set<() => void>();
@@ -57,6 +60,10 @@ export async function loadAll(): Promise<void> {
 
 export function setTab(tab: TabId): void {
   setState({ tab });
+}
+
+export function setVisibleDate(visibleDate: string): void {
+  if (state.visibleDate !== visibleDate) setState({ visibleDate });
 }
 
 function replaceById<T extends { id: string }>(rows: T[], row: T): T[] {

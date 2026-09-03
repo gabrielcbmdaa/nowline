@@ -7,7 +7,12 @@ import { DatePickerSheet } from '../sheets/DatePickerSheet';
 import { DaySection } from './DaySection';
 import { useInfiniteDays } from './useInfiniteDays';
 
-export function CalendarScreen() {
+type Props = {
+  onCreateBlock: (date: string, minute: number) => void;
+  onEditBlock: (planId: string, date: string) => void;
+};
+
+export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
   const state = useAppState();
   const today = toDateKey(state.now);
   const { days, visibleDate, scrollRef, onScroll, goTo } = useInfiniteDays(today);
@@ -52,6 +57,10 @@ export function CalendarScreen() {
             key={date}
             date={date}
             now={state.now}
+            onBackgroundTap={onCreateBlock}
+            onOccurrenceTap={(occurrence) =>
+              onEditBlock(occurrence.planId, occurrence.date)
+            }
             occurrences={occurrencesForDay(
               state.plans,
               overrideIndex,

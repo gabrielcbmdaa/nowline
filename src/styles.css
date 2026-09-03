@@ -318,6 +318,7 @@ body {
   left: 0;
   right: 0;
   padding: 2px 0 2px 8px;
+  pointer-events: none;
 }
 
 .day__label {
@@ -333,6 +334,7 @@ body {
   right: 0;
   height: 0;
   border-top: 1px solid var(--line);
+  pointer-events: none;
 }
 
 .hour-line__label {
@@ -387,6 +389,7 @@ body {
   height: 2px;
   background: #e5484d;
   z-index: 5;
+  pointer-events: none;
 }
 
 .button--small {
@@ -438,4 +441,42 @@ body {
 .month__day--current {
   background: var(--accent);
   color: #fff;
+}
+
+.field--row {
+  flex-direction: row;
+  gap: 12px;
+}
+
+.field--row .field {
+  flex: 1;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.choice--round {
+  width: 38px;
+  padding: 10px 0;
+  border-radius: 50%;
+  text-align: center;
+}
+
+.choice--active {
+  border-color: var(--accent);
+  color: var(--text);
 }

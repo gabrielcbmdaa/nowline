@@ -12,9 +12,10 @@ const DONE_DIM = 0.75;
 
 type Props = {
   occurrence: ResolvedOccurrence;
+  onTap: (occurrence: ResolvedOccurrence) => void;
 };
 
-export function TimeBlockView({ occurrence }: Props) {
+export function TimeBlockView({ occurrence, onTap }: Props) {
   const startMinute = minutesSinceMidnight(occurrence.displayStart, occurrence.date);
   const durationMinutes =
     (occurrence.displayEnd.getTime() - occurrence.displayStart.getTime()) / 60000;
@@ -26,6 +27,10 @@ export function TimeBlockView({ occurrence }: Props) {
   return (
     <article
       className={`block block--${occurrence.status}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onTap(occurrence);
+      }}
       style={{
         top: minuteToPixel(startMinute),
         height: Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT),

@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { addDays } from '../../domain/dates';
 import { DAY_HEIGHT, minuteToPixel } from '../../domain/geometry';
+import { setVisibleDate as publishVisibleDate } from '../../state/store';
 
 /** Days kept mounted at once; 365 would be half a million pixels tall. */
 export const WINDOW_DAYS = 7;
@@ -81,6 +82,7 @@ export function useInfiniteDays(initialDate: string) {
     if (nextVisible !== visibleDateRef.current) {
       visibleDateRef.current = nextVisible;
       setVisibleDate(nextVisible);
+      publishVisibleDate(nextVisible);
     }
   }, []);
 
@@ -91,6 +93,7 @@ export function useInfiniteDays(initialDate: string) {
     daysRef.current = buildWindow(date);
     visibleDateRef.current = date;
     setVisibleDate(date);
+    publishVisibleDate(date);
     // Put the requested minute a third of the way down the viewport.
     absoluteTarget.current =
       half * DAY_HEIGHT +
