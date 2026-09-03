@@ -33,3 +33,41 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+.app--loading,
+.placeholder {
+  padding: 24px;
+  color: var(--text-dim);
+}
+
+.tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top);
+}
+
+.tab {
+  flex: 1;
+  padding: 14px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
