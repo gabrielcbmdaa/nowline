@@ -6,6 +6,7 @@ import { loadAll, setTab, startClock, useAppState } from '../state/store';
 import { Fab } from './Fab';
 import { TopTabs } from './TopTabs';
 import { CalendarScreen } from './calendar/CalendarScreen';
+import { RunawayTimerBanner } from './calendar/RunawayTimerBanner';
 import { ProjectsScreen } from './projects/ProjectsScreen';
 import { BlockEditorSheet } from './sheets/BlockEditorSheet';
 import { ProjectEditorSheet } from './sheets/ProjectEditorSheet';
@@ -53,14 +54,21 @@ export function App() {
       <TopTabs active={state.tab} onChange={setTab} />
       <main className="screen">
         {state.tab === 'calendar' && (
-          <CalendarScreen
-            onCreateBlock={(date, startMinute) =>
-              setSheet({ kind: 'block', planId: null, date, startMinute })
-            }
-            onEditBlock={(planId, date) =>
-              setSheet({ kind: 'block', planId, date, startMinute: 0 })
-            }
-          />
+          <div className="tab-pane">
+            <RunawayTimerBanner
+              onFixTimes={(planId, date) =>
+                setSheet({ kind: 'block', planId, date, startMinute: 0 })
+              }
+            />
+            <CalendarScreen
+              onCreateBlock={(date, startMinute) =>
+                setSheet({ kind: 'block', planId: null, date, startMinute })
+              }
+              onEditBlock={(planId, date) =>
+                setSheet({ kind: 'block', planId, date, startMinute: 0 })
+              }
+            />
+          </div>
         )}
         {state.tab === 'summary' && <p className="placeholder">Summary</p>}
         {state.tab === 'projects' && (

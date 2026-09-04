@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { minutesSinceMidnight, toDateKey } from '../../domain/dates';
 import { indexOverrides, occurrencesForDay } from '../../domain/recurrence';
-import { useAppState } from '../../state/store';
+import { startTimerFor, stopRunningTimer, useAppState } from '../../state/store';
 import { formatDayHeading } from '../format';
 import { DatePickerSheet } from '../sheets/DatePickerSheet';
 import { DaySection } from './DaySection';
@@ -61,6 +61,17 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
             onOccurrenceTap={(occurrence) =>
               onEditBlock(occurrence.planId, occurrence.date)
             }
+            onToggleTimer={(occurrence) => {
+              if (occurrence.status === 'running') {
+                void stopRunningTimer();
+                return;
+              }
+              // The button is hidden off today, but state.now only ticks every 30
+              // seconds, so just after midnight it can still be showing on yesterday.
+              // Check the real clock before writing today's timestamp to a past day.
+              if (occurrence.date !== toDateKey(new Date())) return;
+              void startTimerFor(occurrence.planId, occurrence.date);
+            }}
             occurrences={occurrencesForDay(
               state.plans,
               overrideIndex,

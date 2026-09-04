@@ -14,10 +14,12 @@ const DONE_DIM = 0.75;
 
 type Props = {
   occurrence: ResolvedOccurrence;
+  isToday: boolean;
   onTap: (occurrence: ResolvedOccurrence) => void;
+  onToggleTimer: (occurrence: ResolvedOccurrence) => void;
 };
 
-export function TimeBlockView({ occurrence, onTap }: Props) {
+export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Props) {
   const drag = useBlockDrag(occurrence, () => onTap(occurrence));
   const clickFromGesture = useRef(false);
 
@@ -98,6 +100,22 @@ export function TimeBlockView({ occurrence, onTap }: Props) {
           {formatTime(atMinute(occurrence.date, startMinute))} - {formatTime(atMinute(occurrence.date, startMinute + durationMinutes))}
         </span>
       </div>
+
+      {occurrence.status !== 'done' && (isToday || occurrence.status === 'running') && (
+        <button
+          className="block__timer"
+          aria-label={occurrence.status === 'running' ? 'Stop' : 'Start'}
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleTimer(occurrence);
+          }}
+        >
+          {occurrence.status === 'running' ? '■' : '→'}
+        </button>
+      )}
 
       <span
         className="block__handle block__handle--end"

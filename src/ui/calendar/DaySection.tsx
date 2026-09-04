@@ -14,9 +14,17 @@ type Props = {
   now: Date;
   onBackgroundTap: (date: string, minute: number) => void;
   onOccurrenceTap: (occurrence: ResolvedOccurrence) => void;
+  onToggleTimer: (occurrence: ResolvedOccurrence) => void;
 };
 
-export function DaySection({ date, occurrences, now, onBackgroundTap, onOccurrenceTap }: Props) {
+export function DaySection({
+  date,
+  occurrences,
+  now,
+  onBackgroundTap,
+  onOccurrenceTap,
+  onToggleTimer,
+}: Props) {
   const isToday = date === toDateKey(now);
 
   return (
@@ -45,7 +53,9 @@ export function DaySection({ date, occurrences, now, onBackgroundTap, onOccurren
         <TimeBlockView
           key={occurrence.planId}
           occurrence={occurrence}
+          isToday={isToday}
           onTap={onOccurrenceTap}
+          onToggleTimer={onToggleTimer}
         />
       ))}
 
