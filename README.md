@@ -12,8 +12,8 @@ Requires [pnpm](https://pnpm.io). npm and yarn are not used here.
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:5173, or --host to open it on a phone
-pnpm test         # 93 unit tests
+pnpm dev          # http://localhost:5124, or --host to open it on a phone
+pnpm test         # 95 unit tests
 pnpm build        # type-check, then a production build
 ```
 
