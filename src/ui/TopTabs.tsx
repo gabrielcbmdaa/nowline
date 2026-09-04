@@ -1,9 +1,12 @@
+import type { ComponentType } from 'react';
 import type { TabId } from '../state/store';
+import { CalendarIcon, ProjectsIcon, SummaryIcon, type IconProps } from './icons';
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'calendar', label: 'Calendar' },
-  { id: 'summary', label: 'Summary' },
-  { id: 'projects', label: 'Projects' },
+/** The label is no longer drawn, but it still names the button for screen readers. */
+const TABS: { id: TabId; label: string; Icon: ComponentType<IconProps> }[] = [
+  { id: 'calendar', label: 'Calendar', Icon: CalendarIcon },
+  { id: 'summary', label: 'Summary', Icon: SummaryIcon },
+  { id: 'projects', label: 'Projects', Icon: ProjectsIcon },
 ];
 
 type Props = {
@@ -18,10 +21,11 @@ export function TopTabs({ active, onChange }: Props) {
         <button
           key={tab.id}
           aria-current={active === tab.id ? 'page' : undefined}
+          aria-label={tab.label}
           className={`tab ${active === tab.id ? 'tab--active' : ''}`}
           onClick={() => onChange(tab.id)}
         >
-          {tab.label}
+          <tab.Icon className="tab__icon" />
         </button>
       ))}
     </nav>
