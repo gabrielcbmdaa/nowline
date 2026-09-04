@@ -113,6 +113,109 @@ describe('totalsByProject', () => {
     expect(totals[0].project).toBeNull();
     expect(totals[0].seconds).toBe(3600); // 15 min + 45 min
   });
+
+  it('credits a session entirely inside the range in full', () => {
+    const totals = totalsByProject(
+      [exercise],
+      [done('p1', '2026-09-07', new Date(2026, 8, 7, 9, 0, 0), new Date(2026, 8, 7, 10, 0, 0))],
+      [health],
+      '2026-09-07',
+      '2026-09-07',
+    );
+    expect(totals.map((t) => [t.project?.name, t.seconds])).toEqual([['Health', 3600]]);
+  });
+
+  const overnight = done(
+    'p1',
+    '2026-09-06',
+    new Date(2026, 8, 6, 23, 30, 0),
+    new Date(2026, 8, 7, 0, 30, 0),
+  );
+
+  it('credits only the Monday slice of a session that crossed midnight', () => {
+    const totals = totalsByProject(
+      [exercise],
+      [overnight],
+      [health],
+      '2026-09-07',
+      '2026-09-07',
+    );
+    expect(totals.map((t) => [t.project?.name, t.seconds])).toEqual([['Health', 1800]]);
+  });
+
+  it('credits only the Sunday slice of a session that crossed midnight', () => {
+    const totals = totalsByProject(
+      [exercise],
+      [overnight],
+      [health],
+      '2026-09-06',
+      '2026-09-06',
+    );
+    expect(totals.map((t) => [t.project?.name, t.seconds])).toEqual([['Health', 1800]]);
+  });
+
+  it('credits an overnight session once when the range covers both days', () => {
+    const totals = totalsByProject(
+      [exercise],
+      [overnight],
+      [health],
+      '2026-09-06',
+      '2026-09-07',
+    );
+    expect(totals).toHaveLength(1);
+    expect(totals.map((t) => [t.project?.name, t.seconds])).toEqual([['Health', 3600]]);
+  });
+
+  it('credits nothing on the following day when a session ends at midnight', () => {
+    const totals = totalsByProject(
+      [exercise],
+      [
+        done(
+          'p1',
+          '2026-09-06',
+          new Date(2026, 8, 6, 23, 30, 0),
+          new Date(2026, 8, 7, 0, 0, 0),
+        ),
+      ],
+      [health],
+      '2026-09-07',
+      '2026-09-07',
+    );
+    expect(totals).toEqual([]);
+  });
+
+  it('credits nothing for a session entirely outside the range', () => {
+    const totals = totalsByProject(
+      [exercise],
+      [done('p1', '2026-09-08', new Date(2026, 8, 8, 9, 0, 0), new Date(2026, 8, 8, 10, 0, 0))],
+      [health],
+      '2026-09-07',
+      '2026-09-07',
+    );
+    expect(totals).toEqual([]);
+  });
+
+  it('credits nothing for a running override or a done override with no end', () => {
+    const running: BlockOverride = {
+      ...done('p1', '2026-09-07', new Date(2026, 8, 7, 9, 0, 0), new Date(2026, 8, 7, 10, 0, 0)),
+      id: 'running',
+      status: 'running',
+      actualEnd: null,
+    };
+    const missingEnd: BlockOverride = {
+      ...done('p1', '2026-09-07', new Date(2026, 8, 7, 9, 0, 0), new Date(2026, 8, 7, 10, 0, 0)),
+      id: 'missing-end',
+      actualEnd: null,
+    };
+    const totals = totalsByProject(
+      [exercise],
+      [running, missingEnd],
+      [health],
+      '2026-09-07',
+      '2026-09-07',
+    );
+    expect(totals).toEqual([]);
+  });
 });
 
 describe('formatDuration', () => {

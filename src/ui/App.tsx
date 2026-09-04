@@ -10,6 +10,7 @@ import { RunawayTimerBanner } from './calendar/RunawayTimerBanner';
 import { ProjectsScreen } from './projects/ProjectsScreen';
 import { BlockEditorSheet } from './sheets/BlockEditorSheet';
 import { ProjectEditorSheet } from './sheets/ProjectEditorSheet';
+import { SummaryScreen } from './summary/SummaryScreen';
 
 type Sheet =
   | { kind: 'project'; project: Project | null }
@@ -70,7 +71,7 @@ export function App() {
             />
           </div>
         )}
-        {state.tab === 'summary' && <p className="placeholder">Summary</p>}
+        {state.tab === 'summary' && <SummaryScreen />}
         {state.tab === 'projects' && (
           <ProjectsScreen onEdit={(project) => setSheet({ kind: 'project', project })} />
         )}
