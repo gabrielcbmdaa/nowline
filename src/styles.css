@@ -523,19 +523,27 @@ body {
   min-height: 0;
 }
 
+/* 34px of thumb to hit, but only the glyph is drawn: no ring, no fill. The round
+   shape survives so the focus ring follows the target rather than boxing it. */
 .block__timer {
   flex: 0 0 auto;
   position: relative;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 1.5px solid rgb(255 255 255 / 85%);
+  border: none;
   background: transparent;
   color: #fff;
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
+}
+
+.block__timer-icon {
+  width: 19px;
+  height: 19px;
 }
 
 .banner {

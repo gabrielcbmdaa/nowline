@@ -25,6 +25,18 @@ function Icon({ className, children }: IconProps & { children: ReactNode }) {
   );
 }
 
+/**
+ * The filled counterpart. The shape itself is the ink, so there is no stroke: a
+ * stroke would only paint half its width outside the outline and fatten the icon.
+ */
+function SolidIcon({ className, children }: IconProps & { children: ReactNode }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
 export function CalendarIcon({ className }: IconProps) {
   return (
     <Icon className={className}>
@@ -55,5 +67,25 @@ export function ProjectsIcon({ className }: IconProps) {
       <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
       <path d="M2 10h20" />
     </Icon>
+  );
+}
+
+export function PlayIcon({ className }: IconProps) {
+  return (
+    <SolidIcon className={className}>
+      <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
+    </SolidIcon>
+  );
+}
+
+/**
+ * Lucide draws this square at 18 of 24. Filled, a compact block reads heavier than
+ * a triangle of the same width, so it is pulled in to 16 to match the play visually.
+ */
+export function StopIcon({ className }: IconProps) {
+  return (
+    <SolidIcon className={className}>
+      <rect width="16" height="16" x="4" y="4" rx="2" />
+    </SolidIcon>
   );
 }

@@ -3,6 +3,7 @@ import { atMinute, minutesSinceMidnight } from '../../domain/dates';
 import { DAY_HEIGHT, minuteToPixel } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { formatTime } from '../format';
+import { PlayIcon, StopIcon } from '../icons';
 import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor';
 import { useBlockDrag } from './useBlockDrag';
 
@@ -118,7 +119,11 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
             onToggleTimer(occurrence);
           }}
         >
-          {occurrence.status === 'running' ? '■' : '→'}
+          {occurrence.status === 'running' ? (
+            <StopIcon className="block__timer-icon" />
+          ) : (
+            <PlayIcon className="block__timer-icon" />
+          )}
         </button>
       )}
 
