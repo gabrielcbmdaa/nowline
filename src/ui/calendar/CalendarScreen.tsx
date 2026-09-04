@@ -62,15 +62,21 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
               onEditBlock(occurrence.planId, occurrence.date)
             }
             onToggleTimer={(occurrence) => {
-              if (occurrence.status === 'running') {
-                void stopRunningTimer();
-                return;
-              }
-              // The button is hidden off today, but state.now only ticks every 30
-              // seconds, so just after midnight it can still be showing on yesterday.
-              // Check the real clock before writing today's timestamp to a past day.
-              if (occurrence.date !== toDateKey(new Date())) return;
-              void startTimerFor(occurrence.planId, occurrence.date);
+              void (async () => {
+                try {
+                  if (occurrence.status === 'running') {
+                    await stopRunningTimer();
+                    return;
+                  }
+                  // The button is hidden off today, but state.now only ticks every 30
+                  // seconds, so just after midnight it can still be showing on yesterday.
+                  // Check the real clock before writing today's timestamp to a past day.
+                  if (occurrence.date !== toDateKey(new Date())) return;
+                  await startTimerFor(occurrence.planId, occurrence.date);
+                } catch {
+                  // A failed start or stop leaves the calendar as it was.
+                }
+              })();
             }}
             occurrences={occurrencesForDay(
               state.plans,

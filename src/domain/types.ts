@@ -69,13 +69,10 @@ export type BlockOverride = {
 /** A plan and its override for one day, resolved into something drawable. */
 export type ResolvedOccurrence = {
   planId: string;
-  overrideId: string | null;
   date: string;
   title: string;
   project: Project | null;
   status: 'scheduled' | 'running' | 'done';
   displayStart: Date;
   displayEnd: Date;
-  /** Zero unless the block was actually stopped. Never persisted. */
-  trackedSeconds: number;
 };

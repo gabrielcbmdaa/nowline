@@ -23,13 +23,30 @@ const DEFAULT_NEW_BLOCK_MINUTE = 9 * 60;
 export function App() {
   const state = useAppState();
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    void loadAll();
+    void loadAll().catch(() => setLoadError(true));
     return startClock();
   }, []);
 
   if (!state.loaded) {
+    if (loadError) {
+      return (
+        <div className="app app--loading">
+          <p className="error">Could not load. Please try again.</p>
+          <button
+            className="button"
+            onClick={() => {
+              setLoadError(false);
+              void loadAll().catch(() => setLoadError(true));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
     return <div className="app app--loading">Loading…</div>;
   }
 

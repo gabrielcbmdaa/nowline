@@ -81,7 +81,13 @@ export class LocalStorageRepository implements BlockRepository {
       const raw = localStorage.getItem(key);
       if (!raw) return [];
       const parsed: unknown = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as T[]) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (row): row is T =>
+          row !== null &&
+          typeof row === 'object' &&
+          typeof (row as { id?: unknown }).id === 'string',
+      );
     } catch {
       // Corrupt storage must not brick the app; start from an empty list.
       return [];
@@ -100,5 +106,3 @@ function upsert<T extends { id: string }>(rows: T[], row: T): T[] {
   next[index] = row;
   return next;
 }
-
-export const repository: BlockRepository = new LocalStorageRepository();

@@ -19,25 +19,33 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
     ? state.plans.filter((plan) => plan.projectId === project.id).length
     : 0;
 
-  function handleSave() {
+  async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Name is required');
       return;
     }
-    void saveProject({
-      id: project?.id ?? newId(),
-      name: trimmed,
-      color,
-      createdAt: project?.createdAt ?? new Date().toISOString(),
-    });
-    onClose();
+    try {
+      await saveProject({
+        id: project?.id ?? newId(),
+        name: trimmed,
+        color,
+        createdAt: project?.createdAt ?? new Date().toISOString(),
+      });
+      onClose();
+    } catch {
+      setError('Could not save. Please try again.');
+    }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!project) return;
-    void deleteProject(project.id);
-    onClose();
+    try {
+      await deleteProject(project.id);
+      onClose();
+    } catch {
+      setError('Could not delete. Please try again.');
+    }
   }
 
   return (
@@ -80,7 +88,7 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
             <button className="button" onClick={() => setConfirmingDelete(false)}>
               Cancel
             </button>
-            <button className="button button--danger" onClick={handleDelete}>
+            <button className="button button--danger" onClick={() => { void handleDelete(); }}>
               Delete
               {affectedBlocks > 0 && ` (${affectedBlocks} blocks keep no color)`}
             </button>
@@ -92,7 +100,7 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
                 Delete
               </button>
             )}
-            <button className="button button--primary" onClick={handleSave}>
+            <button className="button button--primary" onClick={() => { void handleSave(); }}>
               Save
             </button>
           </>

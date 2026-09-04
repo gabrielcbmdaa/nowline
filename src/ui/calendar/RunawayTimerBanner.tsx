@@ -56,8 +56,8 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
         </button>
         <button
           className="button button--small"
-          // Deliberately does NOT dismiss: the user can still cancel the editor, and
-          // the timer would then be running with its warning hidden for good.
+          // Stops the timer before opening the editor, so cancelling the editor
+          // cannot leave a running timer.
           onClick={() => {
             void stopAndFixTimes();
           }}

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { toDateKey } from '../domain/dates';
 import { newId, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
-import { repository } from '../storage/localStorageRepository';
+import { repository } from '../storage/repository';
 
 export type TabId = 'calendar' | 'summary' | 'projects';
 
@@ -107,11 +107,6 @@ export async function saveOverride(override: BlockOverride): Promise<void> {
   setState({ overrides: replaceById(state.overrides, override) });
 }
 
-export async function deleteOverride(id: string): Promise<void> {
-  await repository.deleteOverride(id);
-  setState({ overrides: state.overrides.filter((o) => o.id !== id) });
-}
-
 export function getRunningOverride(current: AppState = state): BlockOverride | null {
   return current.overrides.find((override) => override.status === 'running') ?? null;
 }
@@ -133,8 +128,13 @@ function enqueueTimerTransition(op: () => Promise<void>): Promise<void> {
   return run;
 }
 
-async function startTimerForUnlocked(planId: string, date: string): Promise<void> {
-  const now = new Date();
+async function startTimerForUnlocked(planId: string, date: string, now: Date): Promise<void> {
+  // Re-read from the repository rather than trusting this tab's cache.
+  // This narrows the race to the gap between the read and the write;
+  // making it airtight needs an atomic operation in the repository.
+  const overrides = await repository.listOverrides();
+  setState({ overrides });
+
   await stopRunningTimerUnlocked(now);
 
   const existing =
@@ -156,7 +156,8 @@ async function stopRunningTimerUnlocked(now: Date): Promise<void> {
  * at a time, so two overlapping totals can never exist.
  */
 export async function startTimerFor(planId: string, date: string): Promise<void> {
-  await enqueueTimerTransition(() => startTimerForUnlocked(planId, date));
+  const now = new Date();
+  await enqueueTimerTransition(() => startTimerForUnlocked(planId, date, now));
 }
 
 export async function stopRunningTimer(now: Date = new Date()): Promise<void> {
@@ -169,4 +170,4 @@ export function startClock(): () => void {
   return () => window.clearInterval(id);
 }
 
-export { newId, toDateKey };
+export { newId };

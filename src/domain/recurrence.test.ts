@@ -67,7 +67,6 @@ describe('occurrencesForDay', () => {
     expect(occurrence.project?.color).toBe('#E5484D');
     expect(occurrence.displayStart.getHours()).toBe(5);
     expect(occurrence.displayEnd.getHours()).toBe(7);
-    expect(occurrence.trackedSeconds).toBe(0);
   });
 
   it('moves the block to the real start once it is running, and grows past the plan', () => {
@@ -105,7 +104,7 @@ describe('occurrencesForDay', () => {
     expect(late.displayEnd.getTime()).toBe(new Date(2026, 8, 3, 9, 0, 0).getTime());
   });
 
-  it('shrinks a stopped block to the real time and reports its seconds', () => {
+  it('shrinks a stopped block to the real time', () => {
     const done: BlockOverride = {
       id: 'o1',
       planId: 'p1',
@@ -125,7 +124,6 @@ describe('occurrencesForDay', () => {
     )[0];
     expect(occurrence.status).toBe('done');
     expect(occurrence.displayEnd.getTime()).toBe(new Date(2026, 8, 3, 6, 17, 40).getTime());
-    expect(occurrence.trackedSeconds).toBe(2788);
   });
 
   it('leaves the following days untouched by one day of tracking', () => {
@@ -214,5 +212,100 @@ describe('occurrencesForDay', () => {
       now,
     )[0];
     expect(occurrence.project).toBeNull();
+  });
+
+  const tuesdaysOnly: BlockPlan = {
+    ...dailyPlan,
+    recurrence: { type: 'weekly', weekdays: [2] },
+  };
+  const monday = '2026-09-07';
+
+  it('still shows a done override after the plan no longer covers that day', () => {
+    const done: BlockOverride = {
+      id: 'o1',
+      planId: 'p1',
+      date: monday,
+      status: 'done',
+      actualStart: new Date(2026, 8, 7, 5, 31, 12).toISOString(),
+      actualEnd: new Date(2026, 8, 7, 6, 17, 40).toISOString(),
+      startMinute: null,
+      durationMinutes: null,
+    };
+    const occurrences = occurrencesForDay(
+      [tuesdaysOnly],
+      indexOverrides([done]),
+      projectsById,
+      monday,
+      now,
+    );
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0].status).toBe('done');
+  });
+
+  it('still shows a running override after the plan no longer covers that day', () => {
+    const running: BlockOverride = {
+      id: 'o1',
+      planId: 'p1',
+      date: monday,
+      status: 'running',
+      actualStart: new Date(2026, 8, 7, 5, 31, 12).toISOString(),
+      actualEnd: null,
+      startMinute: null,
+      durationMinutes: null,
+    };
+    const occurrences = occurrencesForDay(
+      [tuesdaysOnly],
+      indexOverrides([running]),
+      projectsById,
+      monday,
+      new Date(2026, 8, 7, 6, 0, 0),
+    );
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0].status).toBe('running');
+    expect(occurrences[0].displayStart.getMinutes()).toBe(31);
+  });
+
+  it('hides a scheduled override on a day the plan no longer covers', () => {
+    const scheduled: BlockOverride = {
+      id: 'o1',
+      planId: 'p1',
+      date: monday,
+      status: 'scheduled',
+      actualStart: null,
+      actualEnd: null,
+      startMinute: 420,
+      durationMinutes: 60,
+    };
+    expect(
+      occurrencesForDay(
+        [tuesdaysOnly],
+        indexOverrides([scheduled]),
+        projectsById,
+        monday,
+        now,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('hides a deleted override on a day the plan no longer covers', () => {
+    const deleted: BlockOverride = {
+      id: 'o1',
+      planId: 'p1',
+      date: monday,
+      status: 'deleted',
+      actualStart: null,
+      actualEnd: null,
+      startMinute: null,
+      durationMinutes: null,
+    };
+    expect(
+      occurrencesForDay(
+        [tuesdaysOnly],
+        indexOverrides([deleted]),
+        projectsById,
+        monday,
+        now,
+      ),
+    ).toHaveLength(0);
   });
 });

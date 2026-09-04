@@ -45,10 +45,6 @@ export function atMinute(key: string, minute: number): Date {
   return date;
 }
 
-export function todayKey(now: Date): string {
-  return toDateKey(now);
-}
-
 export function compareDateKeys(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

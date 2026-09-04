@@ -1,5 +1,4 @@
 import { atMinute, compareDateKeys, weekdayOf } from './dates';
-import { trackedSeconds } from './timer';
 import type {
   BlockOverride,
   BlockPlan,
@@ -71,14 +70,12 @@ export function resolveOccurrence(
 
   return {
     planId: plan.id,
-    overrideId: override?.id ?? null,
     date,
     title: plan.title,
     project,
     status,
     displayStart,
     displayEnd,
-    trackedSeconds: override ? trackedSeconds(override) : 0,
   };
 }
 
@@ -92,8 +89,10 @@ export function occurrencesForDay(
   const occurrences: ResolvedOccurrence[] = [];
 
   for (const plan of plans) {
-    if (!planAppliesOn(plan, date)) continue;
     const override = overrideIndex.get(overrideKey(plan.id, date)) ?? null;
+    if (!planAppliesOn(plan, date)) {
+      if (override?.status !== 'done' && override?.status !== 'running') continue;
+    }
     const project = plan.projectId ? projectsById.get(plan.projectId) ?? null : null;
     const resolved = resolveOccurrence(plan, override, project, date, now);
     if (resolved) occurrences.push(resolved);

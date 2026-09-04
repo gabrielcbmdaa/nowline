@@ -82,10 +82,12 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
 
   const [title, setTitle] = useState(plan?.title ?? '');
   const [projectId, setProjectId] = useState<string | null>(plan?.projectId ?? null);
-  const [startMinute, setStartMinute] = useState(plan?.startMinute ?? defaultStartMinute);
+  const effectiveStartMinute =
+    override?.startMinute ?? plan?.startMinute ?? defaultStartMinute;
+  const [startMinute, setStartMinute] = useState(effectiveStartMinute);
   const [endMinute, setEndMinute] = useState(
     plan
-      ? plan.startMinute + plan.durationMinutes
+      ? effectiveStartMinute + (override?.durationMinutes ?? plan.durationMinutes)
       : Math.min(defaultStartMinute + 60, MINUTES_PER_DAY - 1),
   );
   const [recurrence, setRecurrence] = useState<Recurrence>(
@@ -179,8 +181,11 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       createdAt: plan?.createdAt ?? new Date().toISOString(),
     };
 
+    const hasPositionalOverride =
+      override != null &&
+      (override.startMinute != null || override.durationMinutes != null);
+
     try {
-      await savePlan(next);
       if (tracked?.actualStart && tracked.actualEnd) {
         const { start, end } = resolveTrackedTimestamps(
           tracked.actualStart,
@@ -190,8 +195,25 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
           trackedStartEdited,
           trackedEndEdited,
         );
-        await saveOverride(correctTimes(tracked, start, end));
+        const corrected = correctTimes(tracked, start, end);
+        await saveOverride(
+          hasPositionalOverride
+            ? { ...corrected, startMinute: null, durationMinutes: null }
+            : corrected,
+        );
+      } else if (override && hasPositionalOverride) {
+        await saveOverride({
+          id: override.id,
+          planId: override.planId,
+          date: override.date,
+          status: override.status,
+          actualStart: override.actualStart,
+          actualEnd: override.actualEnd,
+          startMinute: null,
+          durationMinutes: null,
+        });
       }
+      await savePlan(next);
       onClose();
     } catch (saveError) {
       const message = (saveError as Error).message;

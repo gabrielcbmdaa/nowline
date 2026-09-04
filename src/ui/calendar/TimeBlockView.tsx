@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { atMinute, minutesSinceMidnight } from '../../domain/dates';
-import { minuteToPixel } from '../../domain/geometry';
+import { DAY_HEIGHT, minuteToPixel } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { formatTime } from '../format';
 import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor';
@@ -28,6 +28,11 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
   const durationMinutes =
     (occurrence.displayEnd.getTime() - occurrence.displayStart.getTime()) / 60000 +
     drag.extraMinutes;
+
+  const height = Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT);
+  // Min height would push a short late block into the next day; sit it a few
+  // pixels above its true start so it stays inside this day.
+  const top = Math.min(minuteToPixel(startMinute), DAY_HEIGHT - height);
 
   const baseColor = occurrence.project?.color ?? NO_PROJECT_COLOR;
   const background =
@@ -63,8 +68,8 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
     <article
       className={`block block--${occurrence.status}`}
       style={{
-        top: minuteToPixel(startMinute),
-        height: Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT),
+        top,
+        height,
         background,
         color: readableTextColor(background),
       }}

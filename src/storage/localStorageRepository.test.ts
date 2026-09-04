@@ -99,4 +99,19 @@ describe('LocalStorageRepository', () => {
     localStorage.setItem('tt.projects.v1', 'not json at all');
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
   });
+
+  it('drops a null entry instead of returning it', async () => {
+    localStorage.setItem('tt.projects.v1', '[null]');
+    expect(await new LocalStorageRepository().listProjects()).toEqual([]);
+  });
+
+  it('drops a string entry instead of returning it', async () => {
+    localStorage.setItem('tt.projects.v1', '["not an object"]');
+    expect(await new LocalStorageRepository().listProjects()).toEqual([]);
+  });
+
+  it('drops a row with no id', async () => {
+    localStorage.setItem('tt.projects.v1', JSON.stringify([{ name: 'Health' }]));
+    expect(await new LocalStorageRepository().listProjects()).toEqual([]);
+  });
 });

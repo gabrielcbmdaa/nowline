@@ -1,0 +1,88 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BlockOverride } from '../domain/types';
+import { repository } from '../storage/repository';
+import { getState, loadAll, startTimerFor } from './store';
+
+describe('store', () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    vi.useRealTimers();
+    await loadAll();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('stops a running timer another tab wrote, not only the one in this tab’s cache', async () => {
+    expect(getState().overrides).toEqual([]);
+
+    const hiddenRunning: BlockOverride = {
+      id: 'hidden',
+      planId: 'p-other',
+      date: '2026-09-03',
+      status: 'running',
+      actualStart: new Date(2026, 8, 3, 9, 0, 0).toISOString(),
+      actualEnd: null,
+      startMinute: null,
+      durationMinutes: null,
+    };
+    localStorage.setItem('tt.overrides.v1', JSON.stringify([hiddenRunning]));
+
+    await startTimerFor('p-this', '2026-09-03');
+
+    const stored = JSON.parse(localStorage.getItem('tt.overrides.v1')!) as BlockOverride[];
+    const running = stored.filter((override) => override.status === 'running');
+    expect(running).toHaveLength(1);
+    expect(running[0].planId).toBe('p-this');
+    expect(stored.find((override) => override.id === 'hidden')?.status).toBe('done');
+    expect(getState().overrides.find((override) => override.id === 'hidden')?.status).toBe(
+      'done',
+    );
+  });
+
+  it('records the instant Play was tapped, not when the queued write ran', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 3, 10, 0, 0));
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstSaveStarted!: () => void;
+    const sawFirstSave = new Promise<void>((resolve) => {
+      firstSaveStarted = resolve;
+    });
+
+    let holdingFirst = true;
+    const originalSave = repository.saveOverride.bind(repository);
+    vi.spyOn(repository, 'saveOverride').mockImplementation(async (override) => {
+      if (holdingFirst) {
+        holdingFirst = false;
+        firstSaveStarted();
+        await held;
+      }
+      return originalSave(override);
+    });
+
+    const occupying = startTimerFor('p-occupy', '2026-09-03');
+    await sawFirstSave;
+
+    const play = startTimerFor('p-real', '2026-09-03');
+    vi.setSystemTime(new Date(2026, 8, 3, 10, 0, 10));
+    release();
+    await occupying;
+    await play;
+
+    const started = getState().overrides.find((override) => override.planId === 'p-real');
+    expect(started?.actualStart).toBe(new Date(2026, 8, 3, 10, 0, 0).toISOString());
+  });
+
+  it('re-reads overrides through the storage seam before starting a timer', async () => {
+    const listSpy = vi.spyOn(repository, 'listOverrides');
+    await startTimerFor('p1', '2026-09-03');
+    expect(listSpy).toHaveBeenCalled();
+  });
+});

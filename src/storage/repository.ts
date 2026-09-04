@@ -1,4 +1,5 @@
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
+import { LocalStorageRepository } from './localStorageRepository';
 
 /**
  * The seam a future server slots into. Everything above this interface is
@@ -22,3 +23,5 @@ export interface BlockRepository {
   saveOverride(override: BlockOverride): Promise<void>;
   deleteOverride(id: string): Promise<void>;
 }
+
+export const repository: BlockRepository = new LocalStorageRepository();
