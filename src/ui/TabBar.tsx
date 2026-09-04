@@ -14,7 +14,7 @@ type Props = {
   onChange: (tab: TabId) => void;
 };
 
-export function TopTabs({ active, onChange }: Props) {
+export function TabBar({ active, onChange }: Props) {
   return (
     <nav className="tabs">
       {TABS.map((tab) => (

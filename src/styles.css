@@ -28,10 +28,12 @@ body {
   overscroll-behavior: none;
 }
 
+/* The tab bar used to hold the top inset; now that it sits at the bottom, the app does. */
 .app {
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding-top: env(safe-area-inset-top);
 }
 
 .app--loading,
@@ -43,9 +45,9 @@ body {
 .tabs {
   display: flex;
   flex: 0 0 auto;
-  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
   background: var(--bg);
-  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .tab {
@@ -56,19 +58,17 @@ body {
   padding: 12px 0;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
   color: var(--text-dim);
   cursor: pointer;
 }
 
 .tab__icon {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
 }
 
 .tab--active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
+  color: var(--accent);
 }
 
 .screen {
@@ -77,10 +77,11 @@ body {
   position: relative;
 }
 
+/* Anchored to the screen, not the viewport: the tab bar below owns the safe area. */
 .fab-area {
-  position: fixed;
+  position: absolute;
   right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  bottom: 16px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;

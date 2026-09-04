@@ -4,7 +4,7 @@ import { floorToQuarterHour } from '../domain/geometry';
 import type { Project } from '../domain/types';
 import { loadAll, setTab, startClock, useAppState } from '../state/store';
 import { Fab } from './Fab';
-import { TopTabs } from './TopTabs';
+import { TabBar } from './TabBar';
 import { CalendarScreen } from './calendar/CalendarScreen';
 import { RunawayTimerBanner } from './calendar/RunawayTimerBanner';
 import { ProjectsScreen } from './projects/ProjectsScreen';
@@ -69,7 +69,6 @@ export function App() {
 
   return (
     <div className="app">
-      <TopTabs active={state.tab} onChange={setTab} />
       <main className="screen">
         {state.tab === 'calendar' && (
           <div className="tab-pane">
@@ -92,28 +91,30 @@ export function App() {
         {state.tab === 'projects' && (
           <ProjectsScreen onEdit={(project) => setSheet({ kind: 'project', project })} />
         )}
+        {/* Inside the screen so it sits above the tab bar without measuring it. */}
+        <Fab
+          actions={[
+            {
+              label: 'New time block',
+              onSelect: () => {
+                const target = newBlockTarget();
+                setSheet({
+                  kind: 'block',
+                  planId: null,
+                  date: target.date,
+                  startMinute: target.startMinute,
+                });
+              },
+            },
+            {
+              label: 'New project',
+              onSelect: () => setSheet({ kind: 'project', project: null }),
+            },
+          ]}
+        />
       </main>
 
-      <Fab
-        actions={[
-          {
-            label: 'New time block',
-            onSelect: () => {
-              const target = newBlockTarget();
-              setSheet({
-                kind: 'block',
-                planId: null,
-                date: target.date,
-                startMinute: target.startMinute,
-              });
-            },
-          },
-          {
-            label: 'New project',
-            onSelect: () => setSheet({ kind: 'project', project: null }),
-          },
-        ]}
-      />
+      <TabBar active={state.tab} onChange={setTab} />
 
       {sheet?.kind === 'block' && (
         <BlockEditorSheet
