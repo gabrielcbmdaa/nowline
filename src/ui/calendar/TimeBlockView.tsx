@@ -1,8 +1,10 @@
-import { minutesSinceMidnight } from '../../domain/dates';
+import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { atMinute, minutesSinceMidnight } from '../../domain/dates';
 import { minuteToPixel } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { formatTime } from '../format';
 import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor';
+import { useBlockDrag } from './useBlockDrag';
 
 /** Small enough to read, big enough to hit with a thumb. */
 const MIN_BLOCK_HEIGHT = 30;
@@ -16,34 +18,95 @@ type Props = {
 };
 
 export function TimeBlockView({ occurrence, onTap }: Props) {
-  const startMinute = minutesSinceMidnight(occurrence.displayStart, occurrence.date);
+  const drag = useBlockDrag(occurrence, () => onTap(occurrence));
+  const clickFromGesture = useRef(false);
+
+  const startMinute =
+    minutesSinceMidnight(occurrence.displayStart, occurrence.date) + drag.offsetMinutes;
   const durationMinutes =
-    (occurrence.displayEnd.getTime() - occurrence.displayStart.getTime()) / 60000;
+    (occurrence.displayEnd.getTime() - occurrence.displayStart.getTime()) / 60000 +
+    drag.extraMinutes;
 
   const baseColor = occurrence.project?.color ?? NO_PROJECT_COLOR;
   const background =
     occurrence.status === 'done' ? dimTowardPage(baseColor, DONE_DIM) : baseColor;
 
+  function markPointerStart() {
+    clickFromGesture.current = false;
+  }
+
+  function onBodyPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    markPointerStart();
+    drag.onBodyPointerDown(event);
+  }
+
+  function onHandlePointerDown(edge: 'start' | 'end') {
+    return (event: ReactPointerEvent<HTMLElement>) => {
+      markPointerStart();
+      drag.onHandlePointerDown(edge)(event);
+    };
+  }
+
+  function onPointerUp(event: ReactPointerEvent<HTMLElement>) {
+    drag.onPointerUp(event);
+    clickFromGesture.current = true;
+  }
+
+  function onPointerCancel(event: ReactPointerEvent<HTMLElement>) {
+    drag.onPointerCancel(event);
+    clickFromGesture.current = true;
+  }
+
   return (
     <article
       className={`block block--${occurrence.status}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onTap(occurrence);
-      }}
       style={{
         top: minuteToPixel(startMinute),
         height: Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT),
         background,
         color: readableTextColor(background),
       }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onTap(occurrence);
+        }
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!clickFromGesture.current) onTap(occurrence);
+      }}
+      onPointerDown={onBodyPointerDown}
+      onPointerMove={drag.onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
+      <span
+        className="block__handle block__handle--start"
+        aria-hidden={true}
+        onPointerDown={onHandlePointerDown('start')}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      />
+
       <div className="block__text">
         <span className="block__title">{occurrence.title}</span>
         <span className="block__time">
-          {formatTime(occurrence.displayStart)} - {formatTime(occurrence.displayEnd)}
+          {formatTime(atMinute(occurrence.date, startMinute))} - {formatTime(atMinute(occurrence.date, startMinute + durationMinutes))}
         </span>
       </div>
+
+      <span
+        className="block__handle block__handle--end"
+        aria-hidden={true}
+        onPointerDown={onHandlePointerDown('end')}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      />
     </article>
   );
 }

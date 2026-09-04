@@ -480,3 +480,27 @@ body {
   border-color: var(--accent);
   color: var(--text);
 }
+
+.block--scheduled {
+  touch-action: none; /* only a scheduled block owns the vertical gesture */
+}
+
+.block__handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14px;
+  max-height: 25%;
+}
+
+.block--scheduled .block__handle {
+  cursor: ns-resize;
+}
+
+.block__handle--start {
+  top: 0;
+}
+
+.block__handle--end {
+  bottom: 0;
+}
