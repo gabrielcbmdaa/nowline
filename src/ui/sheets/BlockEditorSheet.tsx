@@ -276,10 +276,11 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
     <Sheet title={plan ? 'Edit time block' : 'New time block'} onClose={onClose}>
       <label className="field">
         <span className="field__label">Title</span>
+        {/* No autoFocus: on a phone it raises the keyboard over the whole sheet.
+            The Sheet still traps focus, landing it on the close button instead. */}
         <input
           className="field__input"
           value={title}
-          autoFocus
           placeholder="Make exercise"
           onChange={(event) => {
             setTitle(event.target.value);
