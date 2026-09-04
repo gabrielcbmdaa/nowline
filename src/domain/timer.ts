@@ -3,8 +3,25 @@ import type { BlockOverride } from './types';
 /** A timer left running longer than this is assumed to be forgotten. */
 export const RUNAWAY_TIMER_HOURS = 12;
 
+/**
+ * Only secure contexts get randomUUID, and a phone opening the dev server over
+ * the network is not one. getRandomValues is always there, so fall back to
+ * laying out the v4 bytes by hand rather than tying ids to the URL scheme.
+ */
 export function newId(): string {
-  return crypto.randomUUID();
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
 }
 
 /**

@@ -3,6 +3,7 @@ import type { BlockOverride } from './types';
 import {
   RUNAWAY_TIMER_HOURS,
   correctTimes,
+  newId,
   runningHours,
   startTimer,
   stopTimer,
@@ -106,5 +107,46 @@ describe('timer', () => {
     const now = new Date(2026, 8, 3, 18, 0, 0);
     expect(runningHours(runningOverride(start), now)).toBe(13);
     expect(RUNAWAY_TIMER_HOURS).toBe(12);
+  });
+});
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * A page served over plain http from anything but localhost is not a secure
+ * context, and the browser withholds crypto.randomUUID there. getRandomValues
+ * stays available, so ids must keep working without the wrapper.
+ */
+describe('newId without a secure context', () => {
+  /**
+   * randomUUID lives on Crypto.prototype, so deleting it off the instance does
+   * nothing. Shadow it with undefined instead, which is what the browser shows.
+   */
+  function withoutRandomUUID<T>(body: () => T): T {
+    const own = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+    Object.defineProperty(crypto, 'randomUUID', {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      return body();
+    } finally {
+      if (own) Object.defineProperty(crypto, 'randomUUID', own);
+      else Reflect.deleteProperty(crypto, 'randomUUID');
+    }
+  }
+
+  it('still returns a valid v4 uuid', () => {
+    withoutRandomUUID(() => {
+      expect(crypto.randomUUID).toBeUndefined();
+      expect(newId()).toMatch(UUID_V4);
+    });
+  });
+
+  it('does not repeat ids', () => {
+    withoutRandomUUID(() => {
+      const ids = new Set(Array.from({ length: 500 }, newId));
+      expect(ids.size).toBe(500);
+    });
   });
 });
