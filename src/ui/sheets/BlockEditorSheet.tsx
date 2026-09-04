@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { weekdayOf } from '../../domain/dates';
+import { addDays, dateKeyToMidnight, toDateKey, weekdayOf } from '../../domain/dates';
 import { MINUTES_PER_DAY } from '../../domain/geometry';
+import { formatDuration } from '../../domain/summary';
+import { correctTimes, trackedSeconds } from '../../domain/timer';
 import type { BlockPlan, Recurrence } from '../../domain/types';
 import {
   deletePlan,
@@ -22,6 +24,45 @@ const WEEKDAYS = [
   { value: 0, label: 'S' },
 ];
 
+/** Hours and minutes of the local clock; seconds are not part of the field. */
+function wallClockMinute(instant: Date): number {
+  return instant.getHours() * 60 + instant.getMinutes();
+}
+
+/** Place a wall-clock minute on a calendar day, seconds cleared. */
+function atWallClock(dateKey: string, minute: number): Date {
+  const instant = dateKeyToMidnight(dateKey);
+  instant.setHours(Math.floor(minute / 60), minute % 60, 0, 0);
+  return instant;
+}
+
+/**
+ * Untouched fields keep the original instant, seconds included. Edited fields
+ * are rebuilt from the typed wall clock; a tracked end at or before the start
+ * clock lands on the following calendar day.
+ */
+function resolveTrackedTimestamps(
+  actualStartIso: string,
+  actualEndIso: string,
+  startMinute: number,
+  endMinute: number,
+  startEdited: boolean,
+  endEdited: boolean,
+): { start: Date; end: Date } {
+  const originalStart = new Date(actualStartIso);
+  const originalEnd = new Date(actualEndIso);
+  const start = startEdited
+    ? atWallClock(toDateKey(originalStart), startMinute)
+    : originalStart;
+  const end = endEdited
+    ? atWallClock(
+        endMinute > startMinute ? toDateKey(start) : addDays(toDateKey(start), 1),
+        endMinute,
+      )
+    : originalEnd;
+  return { start, end };
+}
+
 type Props = {
   /** Null when creating a new block. */
   planId: string | null;
@@ -33,6 +74,11 @@ type Props = {
 export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: Props) {
   const state = useAppState();
   const plan = planId ? state.plans.find((candidate) => candidate.id === planId) : null;
+
+  const override = state.overrides.find(
+    (candidate) => candidate.planId === planId && candidate.date === date,
+  );
+  const tracked = override?.status === 'done' ? override : null;
 
   const [title, setTitle] = useState(plan?.title ?? '');
   const [projectId, setProjectId] = useState<string | null>(plan?.projectId ?? null);
@@ -47,10 +93,36 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
   );
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [trackedStart, setTrackedStart] = useState(() =>
+    tracked?.actualStart ? wallClockMinute(new Date(tracked.actualStart)) : 0,
+  );
+  const [trackedEnd, setTrackedEnd] = useState(() =>
+    tracked?.actualEnd ? wallClockMinute(new Date(tracked.actualEnd)) : 0,
+  );
+  const [trackedStartEdited, setTrackedStartEdited] = useState(false);
+  const [trackedEndEdited, setTrackedEndEdited] = useState(false);
 
   const repeats = recurrence.type !== 'none';
   /** What is saved decides the delete scope; the draft may say something else. */
   const savedRepeats = (plan?.recurrence.type ?? 'none') !== 'none';
+
+  const resolvedTracked =
+    tracked?.actualStart &&
+    tracked.actualEnd &&
+    Number.isFinite(trackedStart) &&
+    Number.isFinite(trackedEnd)
+      ? resolveTrackedTimestamps(
+          tracked.actualStart,
+          tracked.actualEnd,
+          trackedStart,
+          trackedEnd,
+          trackedStartEdited,
+          trackedEndEdited,
+        )
+      : null;
+  const trackedEndIsNextDay = resolvedTracked
+    ? toDateKey(resolvedTracked.end) > toDateKey(resolvedTracked.start)
+    : false;
 
   function toggleWeekday(day: number) {
     setRecurrence((current) => {
@@ -87,6 +159,13 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       return;
     }
 
+    if (tracked?.actualStart && tracked.actualEnd) {
+      if (!Number.isFinite(trackedStart) || !Number.isFinite(trackedEnd)) {
+        setError('Enter a start time and an end time');
+        return;
+      }
+    }
+
     const next: BlockPlan = {
       id: plan?.id ?? newId(),
       title: trimmed,
@@ -102,9 +181,25 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
 
     try {
       await savePlan(next);
+      if (tracked?.actualStart && tracked.actualEnd) {
+        const { start, end } = resolveTrackedTimestamps(
+          tracked.actualStart,
+          tracked.actualEnd,
+          trackedStart,
+          trackedEnd,
+          trackedStartEdited,
+          trackedEndEdited,
+        );
+        await saveOverride(correctTimes(tracked, start, end));
+      }
       onClose();
-    } catch {
-      setError('Could not save. Please try again.');
+    } catch (saveError) {
+      const message = (saveError as Error).message;
+      setError(
+        message === 'End time must be after start time'
+          ? message
+          : 'Could not save. Please try again.',
+      );
     }
   }
 
@@ -138,6 +233,21 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
     } catch {
       setError('Could not delete. Please try again.');
     }
+  }
+
+  let trackedPreviewLabel = 'Tracked time';
+  if (
+    tracked &&
+    resolvedTracked &&
+    resolvedTracked.end.getTime() > resolvedTracked.start.getTime()
+  ) {
+    trackedPreviewLabel = `Tracked time — ${formatDuration(
+      trackedSeconds({
+        ...tracked,
+        actualStart: resolvedTracked.start.toISOString(),
+        actualEnd: resolvedTracked.end.toISOString(),
+      }),
+    )}`;
   }
 
   return (
@@ -239,6 +349,42 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
           </div>
         )}
       </div>
+
+      {tracked && (
+        <div className="field">
+          <span className="field__label">{trackedPreviewLabel}</span>
+          <div className="field--row">
+            <label className="field">
+              <span className="field__label">Started</span>
+              <input
+                className="field__input"
+                type="time"
+                value={minuteToTimeValue(trackedStart)}
+                onChange={(event) => {
+                  setTrackedStart(timeValueToMinute(event.target.value));
+                  setTrackedStartEdited(true);
+                  setError(null);
+                }}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">
+                Ended{trackedEndIsNextDay ? ' next day' : ''}
+              </span>
+              <input
+                className="field__input"
+                type="time"
+                value={minuteToTimeValue(trackedEnd)}
+                onChange={(event) => {
+                  setTrackedEnd(timeValueToMinute(event.target.value));
+                  setTrackedEndEdited(true);
+                  setError(null);
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       {error && <p className="error">{error}</p>}
 

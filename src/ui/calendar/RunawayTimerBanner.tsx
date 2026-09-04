@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { RUNAWAY_TIMER_HOURS, correctTimes, runningHours } from '../../domain/timer';
-import { getRunningOverride, saveOverride, useAppState } from '../../state/store';
+import { getRunningOverride, saveOverride, stopRunningTimer, useAppState } from '../../state/store';
 
 type Props = {
   onFixTimes: (planId: string, date: string) => void;
@@ -35,6 +35,16 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
     }
   }
 
+  async function stopAndFixTimes() {
+    if (!running) return;
+    try {
+      await stopRunningTimer();
+      onFixTimes(running.planId, running.date);
+    } catch {
+      // Leave the banner up so a failed stop does not hide a still-running timer.
+    }
+  }
+
   return (
     <div className="banner" role="status">
       <span className="banner__text">
@@ -48,9 +58,11 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
           className="button button--small"
           // Deliberately does NOT dismiss: the user can still cancel the editor, and
           // the timer would then be running with its warning hidden for good.
-          onClick={() => onFixTimes(running.planId, running.date)}
+          onClick={() => {
+            void stopAndFixTimes();
+          }}
         >
-          Fix end time
+          Stop and fix times
         </button>
         <button
           className="button button--small"
