@@ -7,8 +7,12 @@ import { PlayIcon, StopIcon } from '../icons';
 import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor';
 import { useBlockDrag } from './useBlockDrag';
 
-/** Small enough to read, big enough to hit with a thumb. */
-const MIN_BLOCK_HEIGHT = 30;
+/**
+ * A quarter hour is 16px at the current scale, so this floor is what makes short
+ * blocks look longer than they are. 18 keeps the single line of text legible while
+ * inflating a 15-minute block by 2px instead of 14.
+ */
+const MIN_BLOCK_HEIGHT = 18;
 
 /** Matches the dimming the done state used to get from CSS opacity. */
 const DONE_DIM = 0.75;
@@ -100,11 +104,12 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
         onPointerCancel={onPointerCancel}
       />
 
+      {/* One line, time first: two stacked lines are what forced the old 30px floor. */}
       <div className="block__text">
-        <span className="block__title">{occurrence.title}</span>
         <span className="block__time">
           {formatTime(atMinute(occurrence.date, startMinute))} - {formatTime(atMinute(occurrence.date, startMinute + durationMinutes))}
         </span>
+        <span className="block__title">{occurrence.title}</span>
       </div>
 
       {occurrence.status !== 'done' && (isToday || occurrence.status === 'running') && (

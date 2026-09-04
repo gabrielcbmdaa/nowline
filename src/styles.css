@@ -356,7 +356,8 @@ body {
   left: 56px;
   right: 8px;
   border-radius: 14px;
-  padding: 6px 10px;
+  /* Only a floor: align-items keeps the content centred in taller blocks. */
+  padding: 2px 10px;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -370,7 +371,8 @@ body {
 
 .block__text {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -383,7 +385,9 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Never squeezed: the title gives way first, since it is the part that can be cut. */
 .block__time {
+  flex: 0 0 auto;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
