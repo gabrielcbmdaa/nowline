@@ -58,3 +58,36 @@ describe('dates', () => {
     expect(compareDateKeys('2026-09-03', '2026-09-03')).toBe(0);
   });
 });
+
+/** Runs in Europe/Madrid; vite.config.ts pins the zone for the whole suite. */
+describe('minutes and wall clock across a daylight saving change', () => {
+  /**
+   * The property, which names no date at all: a minute turned into an instant and
+   * back has to survive the round trip. Whichever days are short or long, they are
+   * in here somewhere. A test that hardcoded the transition days would be only as
+   * right as whoever looked them up.
+   */
+  it('round-trips every minute of every day of a year', () => {
+    const broken: string[] = [];
+    let key = '2026-01-01';
+
+    while (key < '2027-01-01') {
+      for (const minute of [0, 10 * 60, 23 * 60 + 59]) {
+        if (minutesSinceMidnight(atMinute(key, minute), key) !== minute) {
+          broken.push(`${key} at ${minute}`);
+        }
+      }
+      key = addDays(key, 1);
+    }
+
+    expect(broken).toEqual([]);
+  });
+
+  /** The same failure spelled out, for whoever reads the property test and asks which days. */
+  it('keeps a 10:00 block at 10:00 on the day the clocks move', () => {
+    // Confirmed against the IANA database: Madrid jumps 02:00 -> 03:00 on 2026-03-29
+    // and falls 03:00 -> 02:00 on 2026-10-25.
+    expect(minutesSinceMidnight(new Date(2026, 2, 29, 10, 0), '2026-03-29')).toBe(600);
+    expect(minutesSinceMidnight(new Date(2026, 9, 25, 10, 0), '2026-10-25')).toBe(600);
+  });
+});

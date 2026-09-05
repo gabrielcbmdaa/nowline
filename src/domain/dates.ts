@@ -34,9 +34,17 @@ export function startOfWeekKey(key: string): string {
   return addDays(key, -daysSinceMonday);
 }
 
+/**
+ * Minutes of the wall clock, not minutes of elapsed time. The two differ on the
+ * days a clock change makes 23 or 25 hours long, and the app stores wall clock:
+ * atMinute builds an instant from calendar fields, so this has to invert that,
+ * or a 10:00 block lands at 09:00 twice a year. The offset difference between
+ * the two instants is exactly the jump, and is zero on every other day.
+ */
 export function minutesSinceMidnight(date: Date, key: string): number {
   const midnight = dateKeyToMidnight(key);
-  return (date.getTime() - midnight.getTime()) / 60000;
+  const jump = (date.getTimezoneOffset() - midnight.getTimezoneOffset()) * 60000;
+  return (date.getTime() - midnight.getTime() - jump) / 60000;
 }
 
 export function atMinute(key: string, minute: number): Date {

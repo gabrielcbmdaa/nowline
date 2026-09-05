@@ -15,5 +15,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    /**
+     * Pinned so date tests mean the same thing on every machine. Madrid because it
+     * changes its clocks and the developer's zone, La Paz, has not since 1932: with
+     * the local zone a daylight saving test would pass here by proving nothing.
+     */
+    env: { TZ: 'Europe/Madrid' },
   },
 });
