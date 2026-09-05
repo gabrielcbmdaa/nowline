@@ -15,14 +15,18 @@ import {
 import { Sheet } from '../Sheet';
 import { minuteToTimeValue, timeValueToMinute } from '../format';
 
+/**
+ * The single letters fit seven buttons across a phone, but two of them read "T"
+ * and two read "S", so the letter cannot be the name. The name carries the day.
+ */
 const WEEKDAYS = [
-  { value: 1, label: 'M' },
-  { value: 2, label: 'T' },
-  { value: 3, label: 'W' },
-  { value: 4, label: 'T' },
-  { value: 5, label: 'F' },
-  { value: 6, label: 'S' },
-  { value: 0, label: 'S' },
+  { value: 1, label: 'M', name: 'Monday' },
+  { value: 2, label: 'T', name: 'Tuesday' },
+  { value: 3, label: 'W', name: 'Wednesday' },
+  { value: 4, label: 'T', name: 'Thursday' },
+  { value: 5, label: 'F', name: 'Friday' },
+  { value: 6, label: 'S', name: 'Saturday' },
+  { value: 0, label: 'S', name: 'Sunday' },
 ];
 
 /** Hours and minutes of the local clock; seconds are not part of the field. */
@@ -366,6 +370,8 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
                 className={`choice choice--round ${
                   recurrence.weekdays.includes(weekday.value) ? 'choice--active' : ''
                 }`}
+                aria-label={weekday.name}
+                aria-pressed={recurrence.weekdays.includes(weekday.value)}
                 onClick={() => toggleWeekday(weekday.value)}
               >
                 {weekday.label}

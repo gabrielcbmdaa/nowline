@@ -72,6 +72,21 @@ describe('BlockEditorSheet', () => {
       clickSave();
       expect(await screen.findByText('End time must be after start time')).toBeTruthy();
     });
+
+    it('when a weekly repeat has no weekday left', async () => {
+      newBlock();
+      fill('Title', 'Make exercise');
+      fireEvent.click(screen.getByRole('button', { name: 'Weekly' }));
+      // Weekly starts ticked on the day the block sits on, and 2026-09-03 is a
+      // Thursday. Asking for it by name is what a screen reader can do too.
+      fireEvent.click(screen.getByRole('button', { name: 'Thursday', pressed: true }));
+
+      // Unticking has to be audible too, or every day would announce as picked.
+      expect(screen.getByRole('button', { name: 'Thursday', pressed: false })).toBeTruthy();
+      clickSave();
+
+      expect(await screen.findByText('Pick at least one weekday')).toBeTruthy();
+    });
   });
 
   it('keeps the precise message when a tracked correction is invalid, without reporting it', async () => {
