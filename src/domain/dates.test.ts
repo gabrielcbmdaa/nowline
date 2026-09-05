@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addDays,
   atMinute,
+  wallClockMinutesBetween,
   compareDateKeys,
   dateKeyToMidnight,
   minutesSinceMidnight,
@@ -93,6 +94,36 @@ describe('minutes and wall clock across a daylight saving change', () => {
     // and falls 03:00 -> 02:00 on 2026-10-25.
     expect(minutesSinceMidnight(new Date(2026, 2, 29, 10, 0), '2026-03-29')).toBe(600);
     expect(minutesSinceMidnight(new Date(2026, 9, 25, 10, 0), '2026-10-25')).toBe(600);
+  });
+});
+
+describe('wallClockMinutesBetween counts marks of the grid, not elapsed time', () => {
+  /** 01:30 is before either transition and 03:30 after both, so only the gap moves. */
+  function span(date: string, month: number, day: number): number {
+    return wallClockMinutesBetween(
+      new Date(2026, month, day, 1, 30),
+      new Date(2026, month, day, 3, 30),
+      date,
+    );
+  }
+
+  it('spans two hours of the grid on an ordinary day', () => {
+    expect(span('2026-09-03', 8, 3)).toBe(120);
+  });
+
+  it('still spans two, on the day three hours of stopwatch fit between them', () => {
+    expect(span('2026-10-25', 9, 25)).toBe(120);
+    // The elapsed figure, for contrast: this is the number that used to be drawn.
+    const elapsed =
+      (new Date(2026, 9, 25, 3, 30).getTime() - new Date(2026, 9, 25, 1, 30).getTime()) / 60000;
+    expect(elapsed).toBe(180);
+  });
+
+  it('still spans two, on the day only one hour of stopwatch fits between them', () => {
+    expect(span('2026-03-29', 2, 29)).toBe(120);
+    const elapsed =
+      (new Date(2026, 2, 29, 3, 30).getTime() - new Date(2026, 2, 29, 1, 30).getTime()) / 60000;
+    expect(elapsed).toBe(60);
   });
 });
 

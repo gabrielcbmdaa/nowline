@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { minutesSinceMidnight } from '../../domain/dates';
+import { minutesSinceMidnight, wallClockMinutesBetween } from '../../domain/dates';
 import { reportError } from '../../reportError';
 import {
   MINUTES_PER_DAY,
@@ -77,11 +77,21 @@ export function nextPosition(
   };
 }
 
+/**
+ * Both ends in marks of the grid. Only scheduled blocks reach here — `begin` returns
+ * early for the tracked ones — and for those the elapsed figure happens to agree,
+ * since `resolveOccurrence` builds their end by adding the planned duration back on.
+ * Depending on that would be depending on a coincidence, so it asks the same question
+ * the grid asks.
+ */
 function originOf(occurrence: ResolvedOccurrence): Position {
   return {
     startMinute: minutesSinceMidnight(occurrence.displayStart, occurrence.date),
-    durationMinutes:
-      (occurrence.displayEnd.getTime() - occurrence.displayStart.getTime()) / 60000,
+    durationMinutes: wallClockMinutesBetween(
+      occurrence.displayStart,
+      occurrence.displayEnd,
+      occurrence.date,
+    ),
   };
 }
 

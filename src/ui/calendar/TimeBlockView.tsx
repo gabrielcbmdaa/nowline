@@ -1,5 +1,5 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { atMinute, minutesSinceMidnight } from '../../domain/dates';
+import { atMinute, minutesSinceMidnight, wallClockMinutesBetween } from '../../domain/dates';
 import { DAY_HEIGHT, minuteToPixel } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { formatTime } from '../format';
@@ -36,8 +36,10 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
 
   const startMinute =
     minutesSinceMidnight(occurrence.displayStart, occurrence.date) + drag.offsetMinutes;
+  // Marks of the grid, not elapsed time: displayEnd is a real recorded instant on a
+  // tracked block, and re-deriving it from a duration moves it an hour twice a year.
   const durationMinutes =
-    (occurrence.displayEnd.getTime() - occurrence.displayStart.getTime()) / 60000 +
+    wallClockMinutesBetween(occurrence.displayStart, occurrence.displayEnd, occurrence.date) +
     drag.extraMinutes;
 
   const height = Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT);

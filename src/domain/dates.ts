@@ -47,6 +47,18 @@ export function minutesSinceMidnight(date: Date, key: string): number {
   return (date.getTime() - midnight.getTime() - jump) / 60000;
 }
 
+/**
+ * How many marks of the grid separate two instants, which is not how much time
+ * passed between them. The grid is always 24 hours tall, so a block is placed by
+ * asking "which mark?" at both ends; asking "how long?" at the far end is what
+ * draws a session that stopped at 03:30 as ending at 04:30 on the day the clocks
+ * go back. On every other day the two questions have the same answer, which is
+ * exactly why the difference is easy to miss.
+ */
+export function wallClockMinutesBetween(start: Date, end: Date, key: string): number {
+  return minutesSinceMidnight(end, key) - minutesSinceMidnight(start, key);
+}
+
 export function atMinute(key: string, minute: number): Date {
   const date = dateKeyToMidnight(key);
   date.setMinutes(date.getMinutes() + minute);
