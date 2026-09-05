@@ -14,6 +14,12 @@ import { useBlockDrag } from './useBlockDrag';
  */
 const MIN_BLOCK_HEIGHT = 18;
 
+/**
+ * Stacked, the title and the time measure 30.5px together, so only blocks of half
+ * an hour or more can hold both lines. Shorter ones keep them side by side.
+ */
+const STACKED_MIN_HEIGHT = 32;
+
 /** Matches the dimming the done state used to get from CSS opacity. */
 const DONE_DIM = 0.75;
 
@@ -71,7 +77,9 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
 
   return (
     <article
-      className={`block block--${occurrence.status}`}
+      className={`block block--${occurrence.status} ${
+        height >= STACKED_MIN_HEIGHT ? 'block--stacked' : ''
+      }`}
       style={{
         top,
         height,
@@ -104,12 +112,12 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
         onPointerCancel={onPointerCancel}
       />
 
-      {/* One line, time first: two stacked lines are what forced the old 30px floor. */}
+      {/* One line, title first: two stacked lines are what forced the old 30px floor. */}
       <div className="block__text">
+        <span className="block__title">{occurrence.title}</span>
         <span className="block__time">
           {formatTime(atMinute(occurrence.date, startMinute))} - {formatTime(atMinute(occurrence.date, startMinute + durationMinutes))}
         </span>
-        <span className="block__title">{occurrence.title}</span>
       </div>
 
       {occurrence.status !== 'done' && (isToday || occurrence.status === 'running') && (

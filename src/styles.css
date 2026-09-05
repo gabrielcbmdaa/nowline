@@ -392,6 +392,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Tall enough for two lines: the same title-then-time order, turned on its side. */
+.block--stacked .block__text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
 .now-line {
   position: absolute;
   left: 48px;
