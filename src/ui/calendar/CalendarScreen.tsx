@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { minutesSinceMidnight, toDateKey } from '../../domain/dates';
 import { indexOverrides, occurrencesForDay } from '../../domain/recurrence';
+import { reportError } from '../../reportError';
 import { startTimerFor, stopRunningTimer, useAppState } from '../../state/store';
 import { formatDayHeading } from '../format';
 import { DatePickerSheet } from '../sheets/DatePickerSheet';
@@ -73,7 +74,8 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
                   // Check the real clock before writing today's timestamp to a past day.
                   if (occurrence.date !== toDateKey(new Date())) return;
                   await startTimerFor(occurrence.planId, occurrence.date);
-                } catch {
+                } catch (error) {
+                  reportError('Toggling the timer failed', error);
                   // A failed start or stop leaves the calendar as it was.
                 }
               })();

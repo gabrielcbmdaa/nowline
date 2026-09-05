@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { RUNAWAY_TIMER_HOURS, correctTimes, runningHours } from '../../domain/timer';
+import { reportError } from '../../reportError';
 import { getRunningOverride, saveOverride, stopRunningTimer, useAppState } from '../../state/store';
 
 type Props = {
@@ -30,7 +31,8 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
     try {
       await saveOverride(correctTimes(running, start, end));
       setDismissedTimer(`${running.id}:${running.actualStart}`);
-    } catch {
+    } catch (error) {
+      reportError('Stopping the runaway timer at its planned end failed', error);
       // Leave the banner up so a failed write does not hide a still-running timer.
     }
   }
@@ -40,7 +42,8 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
     try {
       await stopRunningTimer();
       onFixTimes(running.planId, running.date);
-    } catch {
+    } catch (error) {
+      reportError('Stopping the runaway timer failed', error);
       // Leave the banner up so a failed stop does not hide a still-running timer.
     }
   }

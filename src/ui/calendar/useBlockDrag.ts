@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { minutesSinceMidnight } from '../../domain/dates';
+import { reportError } from '../../reportError';
 import {
   MINUTES_PER_DAY,
   pixelToMinute,
@@ -189,7 +190,8 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, onTap: () => void) 
         durationMinutes:
           mode === 'move' ? (existing?.durationMinutes ?? null) : committed.durationMinutes,
       });
-    } catch {
+    } catch (error) {
+      reportError('Saving the dragged block failed', error);
       // Preview already cleared; the occurrence still describes the old place.
     }
   }

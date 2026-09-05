@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import { LocalStorageRepository } from './localStorageRepository';
 
@@ -95,9 +95,15 @@ describe('LocalStorageRepository', () => {
     expect(await repo.listOverrides()).toHaveLength(3);
   });
 
-  it('recovers from corrupt storage instead of crashing', async () => {
+  it('recovers from corrupt storage instead of crashing, and says so', async () => {
+    // Silenced on purpose: the warning is the point of the test, not noise from it.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     localStorage.setItem('tt.projects.v1', 'not json at all');
+
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+
+    warn.mockRestore();
   });
 
   it('drops a null entry instead of returning it', async () => {

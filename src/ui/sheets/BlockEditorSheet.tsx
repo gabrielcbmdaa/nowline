@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { addDays, dateKeyToMidnight, toDateKey, weekdayOf } from '../../domain/dates';
 import { MINUTES_PER_DAY } from '../../domain/geometry';
+import { reportError } from '../../reportError';
 import { formatDuration } from '../../domain/summary';
 import { correctTimes, trackedSeconds } from '../../domain/timer';
 import type { BlockPlan, Recurrence } from '../../domain/types';
@@ -217,11 +218,10 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       onClose();
     } catch (saveError) {
       const message = (saveError as Error).message;
-      setError(
-        message === 'End time must be after start time'
-          ? message
-          : 'Could not save. Please try again.',
-      );
+      // Validation is an answer, not a defect: only the other half is worth reporting.
+      const isValidation = message === 'End time must be after start time';
+      if (!isValidation) reportError('Saving the block failed', saveError);
+      setError(isValidation ? message : 'Could not save. Please try again.');
     }
   }
 
@@ -242,7 +242,8 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
         durationMinutes: null,
       });
       onClose();
-    } catch {
+    } catch (error) {
+      reportError('Deleting this day of the block failed', error);
       setError('Could not delete. Please try again.');
     }
   }
@@ -252,7 +253,8 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
     try {
       await deletePlan(plan.id);
       onClose();
-    } catch {
+    } catch (error) {
+      reportError('Deleting every day of the block failed', error);
       setError('Could not delete. Please try again.');
     }
   }

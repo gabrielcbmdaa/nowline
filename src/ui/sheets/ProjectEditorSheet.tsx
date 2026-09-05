@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { PROJECT_COLORS, type Project } from '../../domain/types';
+import { reportError } from '../../reportError';
 import { deleteProject, newId, saveProject, useAppState } from '../../state/store';
 import { Sheet } from '../Sheet';
 
@@ -33,7 +34,8 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
         createdAt: project?.createdAt ?? new Date().toISOString(),
       });
       onClose();
-    } catch {
+    } catch (error) {
+      reportError('Saving the project failed', error);
       setError('Could not save. Please try again.');
     }
   }
@@ -43,7 +45,8 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
     try {
       await deleteProject(project.id);
       onClose();
-    } catch {
+    } catch (error) {
+      reportError('Deleting the project failed', error);
       setError('Could not delete. Please try again.');
     }
   }

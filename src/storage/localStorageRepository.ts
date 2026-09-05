@@ -1,4 +1,5 @@
 import { compareDateKeys } from '../domain/dates';
+import { reportWarning } from '../reportError';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import type { BlockRepository } from './repository';
 
@@ -88,7 +89,8 @@ export class LocalStorageRepository implements BlockRepository {
           typeof row === 'object' &&
           typeof (row as { id?: unknown }).id === 'string',
       );
-    } catch {
+    } catch (error) {
+      reportWarning(`Reading "${key}" from storage failed`, error);
       // Corrupt storage must not brick the app; start from an empty list.
       return [];
     }
