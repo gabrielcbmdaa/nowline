@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addDays,
   atMinute,
@@ -59,28 +59,32 @@ describe('dates', () => {
   });
 });
 
+/**
+ * The property, which names no date at all: a minute turned into an instant and
+ * back has to survive the round trip. Whichever days are short or long, they are
+ * in here somewhere. A test that hardcoded the transition days would be only as
+ * right as whoever looked them up.
+ */
+function daysThatDoNotRoundTrip(year: number): string[] {
+  const broken: string[] = [];
+  let key = `${year}-01-01`;
+
+  while (key < `${year + 1}-01-01`) {
+    for (const minute of [0, 10 * 60, 23 * 60 + 59]) {
+      if (minutesSinceMidnight(atMinute(key, minute), key) !== minute) {
+        broken.push(`${key} at ${minute}`);
+      }
+    }
+    key = addDays(key, 1);
+  }
+
+  return broken;
+}
+
 /** Runs in Europe/Madrid; vite.config.ts pins the zone for the whole suite. */
 describe('minutes and wall clock across a daylight saving change', () => {
-  /**
-   * The property, which names no date at all: a minute turned into an instant and
-   * back has to survive the round trip. Whichever days are short or long, they are
-   * in here somewhere. A test that hardcoded the transition days would be only as
-   * right as whoever looked them up.
-   */
   it('round-trips every minute of every day of a year', () => {
-    const broken: string[] = [];
-    let key = '2026-01-01';
-
-    while (key < '2027-01-01') {
-      for (const minute of [0, 10 * 60, 23 * 60 + 59]) {
-        if (minutesSinceMidnight(atMinute(key, minute), key) !== minute) {
-          broken.push(`${key} at ${minute}`);
-        }
-      }
-      key = addDays(key, 1);
-    }
-
-    expect(broken).toEqual([]);
+    expect(daysThatDoNotRoundTrip(2026)).toEqual([]);
   });
 
   /** The same failure spelled out, for whoever reads the property test and asks which days. */
@@ -89,5 +93,38 @@ describe('minutes and wall clock across a daylight saving change', () => {
     // and falls 03:00 -> 02:00 on 2026-10-25.
     expect(minutesSinceMidnight(new Date(2026, 2, 29, 10, 0), '2026-03-29')).toBe(600);
     expect(minutesSinceMidnight(new Date(2026, 9, 25, 10, 0), '2026-10-25')).toBe(600);
+  });
+});
+
+/**
+ * Only the zone changes here. Madrid moves its clocks by a whole hour, so it cannot
+ * tell a correct jump from one that assumes sixty minutes. Lord Howe Island moves
+ * them by half of one, which is the smallest thing that separates the two.
+ *
+ * Declared locally rather than pulling in @types/node, which would put process and
+ * Buffer in scope for the browser code as well.
+ */
+declare const process: { env: { TZ?: string } };
+
+describe('a clock change that is not a whole hour', () => {
+  const pinnedTimezone = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = 'Australia/Lord_Howe';
+  });
+
+  afterAll(() => {
+    process.env.TZ = pinnedTimezone;
+  });
+
+  it('round-trips every minute of every day of a year there too', () => {
+    expect(daysThatDoNotRoundTrip(2026)).toEqual([]);
+  });
+
+  it('keeps a 10:00 block at 10:00 on both half-hour changes', () => {
+    // Confirmed against the IANA database: Lord Howe springs 02:00 -> 02:30 on
+    // 2026-10-04 and falls 02:00 -> 01:30 on 2026-04-05.
+    expect(minutesSinceMidnight(new Date(2026, 9, 4, 10, 0), '2026-10-04')).toBe(600);
+    expect(minutesSinceMidnight(new Date(2026, 3, 5, 10, 0), '2026-04-05')).toBe(600);
   });
 });
