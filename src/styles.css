@@ -392,10 +392,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Tall enough for two lines: the same title-then-time order, turned on its side. */
+/* Tall enough for two lines: the same title-then-time order, turned on its side.
+   stretch is not redundant: in a column the cross axis is horizontal, and the baseline
+   this rule inherits from .block__text sizes the title to max-content, so its own
+   ellipsis never fires and .block clips it flush instead. */
 .block--stacked .block__text {
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 0;
 }
 
