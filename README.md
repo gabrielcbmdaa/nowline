@@ -17,6 +17,15 @@ pnpm test         # 127 unit tests
 pnpm build        # type-check, then a production build
 ```
 
+## Deploy
+
+Live at <https://nowline.gabrielcbmd.com>.
+
+A push to `main` publishes it. GitHub Actions installs, runs the whole suite and
+builds; only if all three pass does a second job copy `dist/` to the server over
+rsync. The server compiles nothing and runs no process of its own — nginx serves
+the built files. Host, user and path live in repository secrets, not here.
+
 ## How it works
 
 Three tabs: **Calendar**, **Summary**, **Projects**.

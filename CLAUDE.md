@@ -15,7 +15,7 @@ pnpm test:watch
 pnpm build                                # tsc --noEmit, then vite build
 ```
 
-There is no linter. `tsc --noEmit` with `strict`, `noUnusedLocals` and `noUnusedParameters` is the only static gate, and it only runs as part of `pnpm build` — run it before claiming a change compiles.
+There is no linter. `tsc --noEmit` with `strict`, `noUnusedLocals` and `noUnusedParameters` is the only static gate, and it only runs as part of `pnpm build` — run it before claiming a change compiles. CI runs `pnpm test` and `pnpm build` on every push to `main`, and a failure there stops the deploy before the server is touched; that is a second gate, not a reason to skip the first.
 
 `vite.config.ts` pins `TZ=Europe/Madrid` for the test process, because the developer's own zone (La Paz) has not changed its clocks since 1932 and daylight-saving tests would pass there by proving nothing. Never override it.
 
