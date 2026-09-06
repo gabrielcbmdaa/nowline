@@ -309,3 +309,63 @@ describe('occurrencesForDay', () => {
     ).toHaveLength(0);
   });
 });
+
+describe('a block that runs past midnight belongs to the day it starts on', () => {
+  const now = new Date(2026, 8, 3, 12, 0, 0);
+
+  /** 23:45 for half an hour: fifteen minutes on its own day, fifteen on the next. */
+  const latePlan: BlockPlan = {
+    ...dailyPlan,
+    id: 'late',
+    startMinute: 23 * 60 + 45,
+    durationMinutes: 30,
+    recurrence: { type: 'none' },
+    anchorDate: '2026-09-03',
+  };
+
+  it('returns it on its own day, ending on the next', () => {
+    const [occurrence] = occurrencesForDay(
+      [latePlan],
+      indexOverrides([]),
+      projectsById,
+      '2026-09-03',
+      now,
+    );
+    expect(occurrence.date).toBe('2026-09-03');
+    expect(occurrence.displayStart.getDate()).toBe(3);
+    expect(occurrence.displayEnd.getDate()).toBe(4);
+  });
+
+  /**
+   * The whole reason the calendar can stay a per-day question. The block is drawn
+   * once, by the day it starts on, and simply overflows the section it is in; the
+   * next day never has to be told that yesterday reached into it.
+   */
+  it('does not appear again on the day it spills into', () => {
+    expect(
+      occurrencesForDay([latePlan], indexOverrides([]), projectsById, '2026-09-04', now),
+    ).toEqual([]);
+  });
+
+  it('carries a tracked block over midnight too, which the stopwatch can already make', () => {
+    const ran: BlockOverride = {
+      id: 'o1',
+      planId: 'late',
+      date: '2026-09-03',
+      status: 'done',
+      actualStart: new Date(2026, 8, 3, 23, 50).toISOString(),
+      actualEnd: new Date(2026, 8, 4, 0, 20).toISOString(),
+      startMinute: null,
+      durationMinutes: null,
+    };
+    const [occurrence] = occurrencesForDay(
+      [latePlan],
+      indexOverrides([ran]),
+      projectsById,
+      '2026-09-03',
+      now,
+    );
+    expect(occurrence.status).toBe('done');
+    expect(occurrence.displayEnd.getDate()).toBe(4);
+  });
+});
