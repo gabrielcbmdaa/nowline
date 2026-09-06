@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { minutesSinceMidnight, toDateKey } from '../domain/dates';
 import { floorToQuarterHour } from '../domain/geometry';
 import type { Project } from '../domain/types';
+import { reportError } from '../reportError';
 import { loadAll, setTab, startClock, useAppState } from '../state/store';
 import { Fab } from './Fab';
 import { TabBar } from './TabBar';
@@ -25,8 +26,24 @@ export function App() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [loadError, setLoadError] = useState(false);
 
+  /**
+   * One function for both the first load and the retry: they are the same attempt,
+   * and they drifted apart once already. The message on screen is all the user needs;
+   * the error object is all the next person to debug this has.
+   *
+   * Nothing reaches here today — the repository catches its own storage failures and
+   * hands back an empty list — but this is the one catch a server implementation's
+   * failures would arrive through, and it was the last one still discarding them.
+   */
+  function load() {
+    void loadAll().catch((error) => {
+      reportError('Loading the app failed', error);
+      setLoadError(true);
+    });
+  }
+
   useEffect(() => {
-    void loadAll().catch(() => setLoadError(true));
+    load();
     return startClock();
   }, []);
 
@@ -39,7 +56,7 @@ export function App() {
             className="button"
             onClick={() => {
               setLoadError(false);
-              void loadAll().catch(() => setLoadError(true));
+              load();
             }}
           >
             Retry
