@@ -143,3 +143,7 @@ Vite and Vitest.
 - **Desktop wheel scrolling is not suppressed during a mouse drag.**
 - Per-row rounding means two rows of 29 seconds each show `0h 0m` while the footer shows
   `0h 1m`. Inherent to rounding to the minute.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
