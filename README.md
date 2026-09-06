@@ -73,7 +73,8 @@ which is where it bit hardest.
 ### One file to swap for a server
 
 `src/storage/repository.ts` defines the `BlockRepository` interface and exports the active
-implementation. Nothing outside `src/storage/` touches `localStorage` or knows it exists.
+implementation. Nothing outside `src/storage/` touches `localStorage` or knows it
+exists, tests aside.
 Every method is `async` even though the current implementation is synchronous, precisely
 so that a network implementation can replace it without touching a single call site.
 
@@ -153,10 +154,15 @@ Vite and Vitest.
 ## Known limitations
 
 - **Two open tabs can both start a timer.** Narrowed, not eliminated; needs the server.
-- **No component rendering tests.** All 93 tests cover pure logic and storage. The UI
-  behaviour was verified by hand in a browser, which is not repeatable in CI. This is the
-  most valuable thing left to add.
-- **Daylight saving is out of scope.** Several paths assume 1440-minute days.
+- **The calendar strip has no rendering tests.** Of the 127, the ones that render cover a
+  block and the two sheets; the strip itself — scrolling, the sliding window, a drag from
+  pointer to stored override — was verified by hand in a browser, which is not repeatable
+  in CI. This is the most valuable thing left to add.
+- **The grid is always 24 hours tall, even on the two days that are not.** Blocks are
+  placed by wall-clock minute and totals are summed from real timestamps, so both are
+  right on a clock change — `src/domain/dates.ts`, with the tests pinned to Madrid
+  because it changes its clocks. What does not happen is the grid growing or shrinking:
+  the skipped hour still takes up its 64 pixels.
 - **Block times show no AM/PM** — `7:00` reads the same at either end of the day. The hour
   gutter beside the block supplies the context. Deliberate, matching the design.
 - **The date picker has no arrow-key navigation.** Tab and Enter work.

@@ -59,8 +59,9 @@ export function nextPosition(
       origin.startMinute + origin.durationMinutes + deltaMinutes,
     );
     // Midnight is no longer a wall: a block that runs into the next day is drawn
-    // as two rectangles, one per day. What is still a wall is a full turn of the
-    // clock, which is what lets the calendar look one day back and no further.
+    // once, by the day it starts on, overflowing its day section. What is still a
+    // wall is a full turn of the clock, which is what bounds that overflow to one
+    // day, and lets the calendar look one day back and no further.
     const durationMinutes = clamp(
       endMinute - origin.startMinute,
       SNAP_MINUTES,
