@@ -93,7 +93,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
   const [endMinute, setEndMinute] = useState(
     plan
       ? effectiveStartMinute + (override?.durationMinutes ?? plan.durationMinutes)
-      : Math.min(defaultStartMinute + 60, MINUTES_PER_DAY - 1),
+      : defaultStartMinute + 60,
   );
   const [recurrence, setRecurrence] = useState<Recurrence>(
     plan?.recurrence ?? { type: 'none' },
@@ -130,6 +130,23 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
   const trackedEndIsNextDay = resolvedTracked
     ? toDateKey(resolvedTracked.end) > toDateKey(resolvedTracked.start)
     : false;
+  /**
+   * `endMinute` counts from the start day's midnight and may pass 1440; the input
+   * can only say "HH:MM". Same rule the tracked end above already uses: an end at
+   * or before the start clock is the next day, which is the only reading that is
+   * not a block of negative length.
+   */
+  const endIsNextDay = endMinute >= MINUTES_PER_DAY;
+  function endMinuteFromField(value: string): number {
+    const typed = timeValueToMinute(value);
+    if (!Number.isFinite(typed)) return typed;
+    if (typed > startMinute) return typed;
+    // The same clock as the start is the one reading that means nothing: neither
+    // a block of no length nor one of a whole day is what someone typing it meant.
+    // Left as it is so the length check below refuses it and says so.
+    if (typed === startMinute) return typed;
+    return typed + MINUTES_PER_DAY;
+  }
 
   function toggleWeekday(day: number) {
     setRecurrence((current) => {
@@ -157,8 +174,12 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       setError('End time must be after start time');
       return;
     }
-    if (startMinute < 0 || endMinute > MINUTES_PER_DAY) {
-      setError('A block must start and end on the same day');
+    if (startMinute < 0 || startMinute >= MINUTES_PER_DAY) {
+      setError('A block must start on the day it is placed on');
+      return;
+    }
+    if (endMinute - startMinute > MINUTES_PER_DAY) {
+      setError('A block cannot be longer than 24 hours');
       return;
     }
     if (recurrence.type === 'weekly' && recurrence.weekdays.length === 0) {
@@ -325,13 +346,13 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
           />
         </label>
         <label className="field">
-          <span className="field__label">End</span>
+          <span className="field__label">End{endIsNextDay ? ' next day' : ''}</span>
           <input
             className="field__input"
             type="time"
-            value={minuteToTimeValue(endMinute)}
+            value={minuteToTimeValue(endMinute % MINUTES_PER_DAY)}
             onChange={(event) => {
-              setEndMinute(timeValueToMinute(event.target.value));
+              setEndMinute(endMinuteFromField(event.target.value));
               setError(null);
             }}
           />

@@ -44,10 +44,12 @@ export function nextPosition(
   deltaMinutes: number,
 ): Position {
   if (mode === 'move') {
+    // A block starts inside its day and may end after it. The last start that
+    // leaves room for the shortest block is a quarter hour before midnight.
     const startMinute = clamp(
       snapToQuarterHour(origin.startMinute + deltaMinutes),
       0,
-      Math.max(0, MINUTES_PER_DAY - origin.durationMinutes),
+      MINUTES_PER_DAY - SNAP_MINUTES,
     );
     return { startMinute, durationMinutes: origin.durationMinutes };
   }
@@ -56,20 +58,26 @@ export function nextPosition(
     const endMinute = snapToQuarterHour(
       origin.startMinute + origin.durationMinutes + deltaMinutes,
     );
-    const remaining = MINUTES_PER_DAY - origin.startMinute;
+    // Midnight is no longer a wall: a block that runs into the next day is drawn
+    // as two rectangles, one per day. What is still a wall is a full turn of the
+    // clock, which is what lets the calendar look one day back and no further.
     const durationMinutes = clamp(
       endMinute - origin.startMinute,
-      Math.min(SNAP_MINUTES, remaining),
-      remaining,
+      SNAP_MINUTES,
+      MINUTES_PER_DAY,
     );
     return { startMinute: origin.startMinute, durationMinutes };
   }
 
   const endMinute = origin.startMinute + origin.durationMinutes;
+  // Two ceilings, and the lower one wins. The end may now sit past midnight, so
+  // `endMinute - SNAP_MINUTES` alone would let the start follow it out of the day
+  // and store a startMinute of 1440 — a block that begins on a day it says it does
+  // not belong to. A block starts inside its day; only its end may leave.
   const startMinute = clamp(
     snapToQuarterHour(origin.startMinute + deltaMinutes),
     0,
-    Math.max(0, endMinute - SNAP_MINUTES),
+    Math.max(0, Math.min(endMinute - SNAP_MINUTES, MINUTES_PER_DAY - SNAP_MINUTES)),
   );
   return {
     startMinute,

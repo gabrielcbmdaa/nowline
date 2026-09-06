@@ -13,7 +13,7 @@ Requires [pnpm](https://pnpm.io). npm and yarn are not used here.
 ```bash
 pnpm install
 pnpm dev          # http://localhost:5124, or --host to open it on a phone
-pnpm test         # 95 unit tests
+pnpm test         # 127 unit tests
 pnpm build        # type-check, then a production build
 ```
 
@@ -98,11 +98,31 @@ A tracked block is dimmed by blending its **background** toward the page colour,
 CSS `opacity`, because `opacity` fades the text along with the background and cancels out
 the contrast it just gained. `src/ui/textColor.ts`.
 
-### A planned block cannot cross midnight; a tracked one can
+### A block may cross midnight, as one rectangle that overflows its day
 
-Planned times are validated to start and end on the same day. Real ones are not: a timer
-left running overnight is normal, and the correction dialog shows the end marked
-**next day** rather than pretending it did not happen.
+A block starts on the day it is placed on and may end on the next, up to a full turn of
+the clock. It is drawn **once**, by the day it starts on, at its true minute, and simply
+overflows the day section — which sets no `overflow`, so nothing clips it. Blocks carry
+`z-index: 1` for exactly this: the next day's section comes later in the document and
+would otherwise paint its hour lines and its date label over the overhang.
+
+This is what keeps the calendar a per-day question. `occurrencesForDay` returns what
+*belongs* to a date, never what merely passes through it, so a day's answer is complete
+on its own — no day depends on its neighbour being mounted to be drawn correctly.
+
+The end field in the editor says **next day** when the block lands there, the same way
+the tracked correction already did: an end at or before the start clock is read as the
+following day.
+
+Two rules survive, and only these two: a block **starts** inside its day (both drag
+handles clamp to it, and the editor rejects anything else), and it lasts at most 24
+hours. The second is not decoration — it is what bounds the overflow to one day.
+
+Until 2026-09-05 a planned block was validated to end on the same day, and the rule was
+enforced in silence: one at 23:00 stopped growing at exactly one hour with nothing said.
+The tracked side was never bound by it — a timer left running overnight has always
+produced a block past midnight — and those were drawn in the wrong place, slid up the
+grid until they fitted inside the day.
 
 ### Deleting reads what is saved, not what is on screen
 

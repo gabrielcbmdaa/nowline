@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { MINUTES_PER_DAY, SNAP_MINUTES } from '../../domain/geometry';
 import { nextPosition, type DragMode, type Position } from './useBlockDrag';
 
-function staysInsideTheDay(position: Position): void {
+/**
+ * What a gesture may never produce. Midnight stopped being one of these on
+ * 2026-09-05: a block that runs into the next day is drawn as two rectangles,
+ * so only its start has to sit inside the day. A full turn of the clock is
+ * still a wall, because the calendar looks exactly one day back for the tail.
+ */
+function startsInsideTheDay(position: Position): void {
   expect(position.startMinute).toBeGreaterThanOrEqual(0);
-  expect(position.startMinute + position.durationMinutes).toBeLessThanOrEqual(
-    MINUTES_PER_DAY,
-  );
+  expect(position.startMinute).toBeLessThan(MINUTES_PER_DAY);
+  expect(position.durationMinutes).toBeLessThanOrEqual(MINUTES_PER_DAY);
 }
 
 describe('nextPosition', () => {
@@ -19,7 +24,7 @@ describe('nextPosition', () => {
     });
   });
 
-  it('stops a 2-hour block at 22:00–24:00 and never crosses midnight', () => {
+  it('moves a 2-hour block down to 23:45 and lets it end at 01:45 the next day', () => {
     expect(
       nextPosition(
         'move',
@@ -27,7 +32,7 @@ describe('nextPosition', () => {
         MINUTES_PER_DAY,
       ),
     ).toEqual({
-      startMinute: MINUTES_PER_DAY - 2 * 60,
+      startMinute: MINUTES_PER_DAY - SNAP_MINUTES,
       durationMinutes: 2 * 60,
     });
   });
@@ -58,14 +63,32 @@ describe('nextPosition', () => {
     });
   });
 
-  it('stops an end-resize far down exactly at midnight', () => {
+  it('stops an end-resize far down at a full turn of the clock, not at midnight', () => {
     const startMinute = 9 * 60;
     expect(
-      nextPosition('end', { startMinute, durationMinutes: 60 }, MINUTES_PER_DAY),
+      nextPosition('end', { startMinute, durationMinutes: 60 }, 2 * MINUTES_PER_DAY),
     ).toEqual({
       startMinute,
-      durationMinutes: MINUTES_PER_DAY - startMinute,
+      durationMinutes: MINUTES_PER_DAY,
     });
+  });
+
+  it('end-resizes 23:00–23:30 past midnight, which used to stop dead at one hour', () => {
+    const startMinute = 23 * 60;
+    expect(
+      nextPosition('end', { startMinute, durationMinutes: 30 }, 2 * 60),
+    ).toEqual({
+      startMinute,
+      // 23:00 + 2h30 = 01:30 the next day. The old clamp returned 60 here.
+      durationMinutes: 2 * 60 + 30,
+    });
+  });
+
+  it('end-resizes a 15-minute block at 23:45 past midnight', () => {
+    const startMinute = MINUTES_PER_DAY - SNAP_MINUTES;
+    const next = nextPosition('end', { startMinute, durationMinutes: SNAP_MINUTES }, 60);
+    expect(next).toEqual({ startMinute, durationMinutes: SNAP_MINUTES + 60 });
+    startsInsideTheDay(next);
   });
 
   it('top-resizes 10:00–11:00 by −15 to 09:45–11:00, with the end unchanged', () => {
@@ -101,28 +124,41 @@ describe('nextPosition', () => {
     });
   });
 
-  it('moves a 1-minute block to the last minute of the day instead of past midnight', () => {
+  it('moves a 1-minute block no further than the last quarter hour of the day', () => {
     const next = nextPosition(
       'move',
       { startMinute: 0, durationMinutes: 1 },
       MINUTES_PER_DAY,
     );
     expect(next).toEqual({
-      startMinute: MINUTES_PER_DAY - 1,
+      startMinute: MINUTES_PER_DAY - SNAP_MINUTES,
       durationMinutes: 1,
     });
-    staysInsideTheDay(next);
+    startsInsideTheDay(next);
   });
 
-  it('end-resizes a 23:59–24:00 block without growing past midnight', () => {
+  it('end-resizes a 23:59–24:00 block into the next day', () => {
     const startMinute = MINUTES_PER_DAY - 1;
     const next = nextPosition(
       'end',
       { startMinute, durationMinutes: 1 },
       MINUTES_PER_DAY,
     );
-    expect(next).toEqual({ startMinute, durationMinutes: 1 });
-    staysInsideTheDay(next);
+    expect(next).toEqual({ startMinute, durationMinutes: MINUTES_PER_DAY });
+    startsInsideTheDay(next);
+  });
+
+  it('top-resizes a block that ends after midnight without following it out of the day', () => {
+    // 23:30 for 45 minutes ends at 00:15. Dragging the top handle down used to clamp
+    // the start to endMinute - SNAP = 1440, i.e. midnight of a day the block does not
+    // belong to: the stored startMinute was out of range and the block was drawn twice.
+    const next = nextPosition(
+      'start',
+      { startMinute: 23 * 60 + 30, durationMinutes: 45 },
+      MINUTES_PER_DAY,
+    );
+    expect(next.startMinute).toBe(MINUTES_PER_DAY - SNAP_MINUTES);
+    startsInsideTheDay(next);
   });
 
   it('top-resizes 00:00–00:01 to stay at midnight instead of a negative start', () => {
@@ -132,15 +168,15 @@ describe('nextPosition', () => {
       MINUTES_PER_DAY,
     );
     expect(next).toEqual({ startMinute: 0, durationMinutes: 1 });
-    staysInsideTheDay(next);
+    startsInsideTheDay(next);
   });
 
-  it('keeps the degenerate {0, 0} origin inside the day in every mode', () => {
+  it('keeps the degenerate {0, 0} origin within bounds in every mode', () => {
     const origin: Position = { startMinute: 0, durationMinutes: 0 };
     const modes: DragMode[] = ['move', 'end', 'start'];
     for (const mode of modes) {
       for (const delta of [-MINUTES_PER_DAY, 0, MINUTES_PER_DAY]) {
-        staysInsideTheDay(nextPosition(mode, origin, delta));
+        startsInsideTheDay(nextPosition(mode, origin, delta));
       }
     }
   });
