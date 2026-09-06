@@ -42,6 +42,7 @@ function draw(occurrence: ResolvedOccurrence) {
   return {
     label: block.querySelector('.block__time')?.textContent,
     height: block.style.height,
+    top: block.style.top,
   };
 }
 
@@ -61,6 +62,7 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-09-03', 8, 3))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
+      top: '96px',
     });
   });
 
@@ -74,6 +76,7 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-10-25', 9, 25))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
+      top: '96px',
     });
   });
 
@@ -88,6 +91,49 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-03-29', 2, 29))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
+      top: '96px',
     });
+  });
+});
+
+/**
+ * A block that ran from 23:50 to 00:20. Before 2026-09-05 the calendar drew this at
+ * 23:30-00:00 — the right length in the wrong place, because the rectangle was slid
+ * up to fit inside the day instead of being allowed to leave it. The stopwatch has
+ * always been able to produce one of these; nothing had to be dragged for it.
+ */
+const crossing: ResolvedOccurrence = {
+  planId: 'p1',
+  date: '2026-09-05',
+  title: 'Late session',
+  project: null,
+  status: 'done',
+  displayStart: new Date(2026, 8, 5, 23, 50),
+  displayEnd: new Date(2026, 8, 6, 0, 20),
+};
+
+describe('a block that runs past midnight overflows its day instead of moving', () => {
+  afterEach(cleanup);
+
+  it('starts at its true minute and keeps its whole length', () => {
+    // 23:50 is 1430 minutes in, and 1430/60*64 is 1525.33: where 23:50 actually is.
+    // The old clamp answered 1493.33 here, which is 23:20 — half an hour early.
+    expect(draw(crossing)).toEqual({
+      label: '11:50 - 12:20',
+      height: '32px',
+      top: '1525.3333333333333px',
+    });
+  });
+
+  it('is one rectangle, drawn once, that reaches past the end of its day', () => {
+    const { container } = render(
+      <TimeBlockView occurrence={crossing} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+    );
+    expect(container.querySelectorAll('.block')).toHaveLength(1);
+    const block = container.querySelector<HTMLElement>('.block');
+    // DAY_HEIGHT is 1536; the last half hour of this block is drawn below it.
+    expect(parseFloat(block!.style.top) + parseFloat(block!.style.height)).toBeGreaterThan(
+      1536,
+    );
   });
 });

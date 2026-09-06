@@ -355,6 +355,12 @@ body {
   position: absolute;
   left: 56px;
   right: 8px;
+  /* A block that runs past midnight overflows into the next day's section, which
+     comes later in the document and would otherwise paint its hour lines and its
+     date label over the overhang. One step is enough: day sections set no z-index
+     of their own, so blocks still stack among themselves by start time, and the
+     now-line at 5 still sits on top of everything. */
+  z-index: 1;
   border-radius: 14px;
   /* Only a floor: align-items keeps the content centred in taller blocks. */
   padding: 2px 10px;

@@ -79,6 +79,12 @@ export function resolveOccurrence(
   };
 }
 
+/**
+ * Every block that belongs to `date`, whether or not it ends there. A block that
+ * runs past midnight is returned here and only here, by the day it starts on: it is
+ * drawn as one rectangle that overflows the day section, so the next day does not
+ * have to know about it.
+ */
 export function occurrencesForDay(
   plans: BlockPlan[],
   overrideIndex: Map<string, BlockOverride>,

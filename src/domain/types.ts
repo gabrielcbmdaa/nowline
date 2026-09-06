@@ -69,10 +69,15 @@ export type BlockOverride = {
 /** A plan and its override for one day, resolved into something drawable. */
 export type ResolvedOccurrence = {
   planId: string;
+  /** The day the block starts on, and the day its override is keyed by. */
   date: string;
   title: string;
   project: Project | null;
   status: 'scheduled' | 'running' | 'done';
+  /**
+   * Real instants. `displayEnd` may fall on the day after `date`: a block that runs
+   * past midnight is one rectangle that overflows its day section, not two.
+   */
   displayStart: Date;
   displayEnd: Date;
 };

@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { atMinute, minutesSinceMidnight, wallClockMinutesBetween } from '../../domain/dates';
-import { DAY_HEIGHT, minuteToPixel } from '../../domain/geometry';
+import { minuteToPixel } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { formatTime } from '../format';
 import { PlayIcon, StopIcon } from '../icons';
@@ -43,9 +43,10 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
     drag.extraMinutes;
 
   const height = Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT);
-  // Min height would push a short late block into the next day; sit it a few
-  // pixels above its true start so it stays inside this day.
-  const top = Math.min(minuteToPixel(startMinute), DAY_HEIGHT - height);
+  // Drawn at its true start and left to overflow the day section, which does not
+  // clip: a block that runs into the next day is one rectangle crossing the seam,
+  // not two. Sliding it up to fit is what used to draw a 23:50 session at 23:30.
+  const top = minuteToPixel(startMinute);
 
   const baseColor = occurrence.project?.color ?? NO_PROJECT_COLOR;
   const background =
@@ -79,9 +80,9 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
 
   return (
     <article
-      className={`block block--${occurrence.status} ${
-        height >= STACKED_MIN_HEIGHT ? 'block--stacked' : ''
-      }`}
+      className={['block', `block--${occurrence.status}`, height >= STACKED_MIN_HEIGHT ? 'block--stacked' : '']
+        .filter(Boolean)
+        .join(' ')}
       style={{
         top,
         height,
