@@ -1,8 +1,18 @@
 // @vitest-environment jsdom
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { addDays, dateKeyToMidnight } from '../../domain/dates';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { TimeBlockView } from './TimeBlockView';
+
+/**
+ * How long a calendar day lasted. The three cases below only mean anything in a zone
+ * that moves its clocks: in UTC a 01:30 to 03:30 block spans two hours on every day
+ * of the year, so they would all pass while testing nothing at all.
+ */
+function hoursIn(key: string): number {
+  return (dateKeyToMidnight(addDays(key, 1)).getTime() - dateKeyToMidnight(key).getTime()) / 3600000;
+}
 
 /**
  * A block that ran from 01:30 to 03:30 by the wall clock. Both instants are
@@ -37,6 +47,12 @@ function draw(occurrence: ResolvedOccurrence) {
 
 describe('TimeBlockView draws a tracked block by the wall clock', () => {
   afterEach(cleanup);
+
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-03-29')).toBe(23);
+    expect(hoursIn('2026-10-25')).toBe(25);
+    expect(hoursIn('2026-09-03')).toBe(24);
+  });
 
   // 128px is two hours at 64px/hour: the distance between the 01:30 and 03:30 marks.
   const TWO_HOURS = '128px';

@@ -82,8 +82,25 @@ function daysThatDoNotRoundTrip(year: number): string[] {
   return broken;
 }
 
+/**
+ * How long a calendar day lasted, which is 24 hours except on the two days a zone
+ * moves its clocks. Every test below only has teeth in such a zone: in UTC a 10:00
+ * block trivially stays at 10:00, so the assertion still passes and can no longer
+ * fail. This is the brake test moved off the flat car park.
+ */
+function hoursIn(key: string): number {
+  return (dateKeyToMidnight(addDays(key, 1)).getTime() - dateKeyToMidnight(key).getTime()) / 3600000;
+}
+
 /** Runs in Europe/Madrid; vite.config.ts pins the zone for the whole suite. */
 describe('minutes and wall clock across a daylight saving change', () => {
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-03-29')).toBe(23);
+    expect(hoursIn('2026-10-25')).toBe(25);
+    // The control: every other day of the year is ordinary, here as anywhere.
+    expect(hoursIn('2026-09-03')).toBe(24);
+  });
+
   it('round-trips every minute of every day of a year', () => {
     expect(daysThatDoNotRoundTrip(2026)).toEqual([]);
   });
@@ -98,6 +115,11 @@ describe('minutes and wall clock across a daylight saving change', () => {
 });
 
 describe('wallClockMinutesBetween counts marks of the grid, not elapsed time', () => {
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-03-29')).toBe(23);
+    expect(hoursIn('2026-10-25')).toBe(25);
+  });
+
   /** 01:30 is before either transition and 03:30 after both, so only the gap moves. */
   function span(date: string, month: number, day: number): number {
     return wallClockMinutesBetween(
@@ -145,7 +167,15 @@ describe('a clock change that is not a whole hour', () => {
   });
 
   afterAll(() => {
-    process.env.TZ = pinnedTimezone;
+    // Assigning undefined would write the string "undefined", which Node reads as
+    // UTC for the rest of the worker: the pin gone, silently, for whatever runs next.
+    if (pinnedTimezone) process.env.TZ = pinnedTimezone;
+    else delete process.env.TZ;
+  });
+
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-10-04')).toBe(23.5);
+    expect(hoursIn('2026-04-05')).toBe(24.5);
   });
 
   it('round-trips every minute of every day of a year there too', () => {
