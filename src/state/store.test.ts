@@ -28,6 +28,7 @@ describe('store', () => {
       actualEnd: null,
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 3, 9, 0, 0).toISOString(),
     };
     localStorage.setItem('tt.overrides.v1', JSON.stringify([hiddenRunning]));
 

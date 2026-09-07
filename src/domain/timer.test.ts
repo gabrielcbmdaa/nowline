@@ -20,6 +20,7 @@ function runningOverride(start: Date): BlockOverride {
     actualEnd: null,
     startMinute: null,
     durationMinutes: null,
+    updatedAt: start.toISOString(),
   };
 }
 
@@ -41,6 +42,7 @@ describe('timer', () => {
       actualEnd: null,
       startMinute: 330,
       durationMinutes: 120,
+      updatedAt: '2026-09-03T00:00:00.000Z',
     };
     expect(trackedSeconds(scheduled)).toBe(0);
     expect(trackedSeconds(runningOverride(new Date()))).toBe(0);
@@ -64,6 +66,7 @@ describe('timer', () => {
       actualEnd: null,
       startMinute: 300,
       durationMinutes: 120,
+      updatedAt: '2026-09-03T00:00:00.000Z',
     };
     const restarted = startTimer('p1', '2026-09-03', now, existing);
     expect(restarted.id).toBe('kept');

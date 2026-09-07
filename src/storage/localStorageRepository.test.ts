@@ -8,6 +8,8 @@ const project: Project = {
   name: 'Health',
   color: '#E5484D',
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 
 const plan: BlockPlan = {
@@ -20,6 +22,8 @@ const plan: BlockPlan = {
   anchorDate: '2026-09-03',
   endDate: null,
   createdAt: '2026-09-03T00:00:00.000Z',
+  updatedAt: '2026-09-03T00:00:00.000Z',
+  deletedAt: null,
 };
 
 function override(date: string): BlockOverride {
@@ -32,6 +36,7 @@ function override(date: string): BlockOverride {
     actualEnd: `${date}T06:00:00.000Z`,
     startMinute: null,
     durationMinutes: null,
+    updatedAt: `${date}T06:00:00.000Z`,
   };
 }
 

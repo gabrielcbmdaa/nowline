@@ -27,11 +27,14 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
       return;
     }
     try {
+      const now = new Date().toISOString();
       await saveProject({
         id: project?.id ?? newId(),
         name: trimmed,
         color,
-        createdAt: project?.createdAt ?? new Date().toISOString(),
+        createdAt: project?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
       });
       onClose();
     } catch (error) {

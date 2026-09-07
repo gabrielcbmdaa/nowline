@@ -57,6 +57,7 @@ export function startTimer(
     actualEnd: null,
     startMinute: existing?.startMinute ?? null,
     durationMinutes: existing?.durationMinutes ?? null,
+    updatedAt: now.toISOString(),
   };
 }
 
@@ -71,6 +72,7 @@ export function stopTimer(override: BlockOverride, now: Date): BlockOverride {
     ...override,
     status: 'done',
     actualEnd: new Date(endMs).toISOString(),
+    updatedAt: now.toISOString(),
   };
 }
 
@@ -87,6 +89,7 @@ export function correctTimes(
     status: 'done',
     actualStart: actualStart.toISOString(),
     actualEnd: actualEnd.toISOString(),
+    updatedAt: actualEnd.toISOString(),
   };
 }
 

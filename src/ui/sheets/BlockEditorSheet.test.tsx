@@ -18,6 +18,8 @@ const plan: BlockPlan = {
   anchorDate: DATE,
   endDate: null,
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 
 /** Ran from 09:00 to 10:00, so the sheet offers the tracked times for correction. */
@@ -30,6 +32,7 @@ const trackedOverride: BlockOverride = {
   actualEnd: new Date(2026, 8, 3, 10, 0, 0).toISOString(),
   startMinute: null,
   durationMinutes: null,
+  updatedAt: new Date(2026, 8, 3, 10, 0, 0).toISOString(),
 };
 
 function newBlock() {
