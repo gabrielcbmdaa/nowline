@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import { LocalStorageRepository } from './localStorageRepository';
 
+const FROZEN = '2026-09-07T10:00:00.000Z';
+const frozenClock = () => new Date(FROZEN);
+
 const project: Project = {
   id: 'health',
   name: 'Health',
@@ -56,7 +59,8 @@ describe('LocalStorageRepository', () => {
 
   it('saves and reads back a project, and updates it in place', async () => {
     await repo.saveProject(project);
-    expect(await repo.listProjects()).toEqual([project]);
+    const [stored] = await repo.listProjects();
+    expect(stored).toEqual({ ...project, updatedAt: expect.any(String) });
 
     await repo.saveProject({ ...project, name: 'Fitness' });
     const projects = await repo.listProjects();
@@ -67,7 +71,8 @@ describe('LocalStorageRepository', () => {
   it('survives a page reload', async () => {
     await repo.saveProject(project);
     const reopened = new LocalStorageRepository();
-    expect(await reopened.listProjects()).toEqual([project]);
+    const [reloaded] = await reopened.listProjects();
+    expect(reloaded).toEqual({ ...project, updatedAt: expect.any(String) });
   });
 
   it('unassigns the blocks of a deleted project instead of losing them', async () => {
@@ -124,5 +129,14 @@ describe('LocalStorageRepository', () => {
   it('drops a row with no id', async () => {
     localStorage.setItem('tt.projects.v1', JSON.stringify([{ name: 'Health' }]));
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
+  });
+
+  it('stamps updatedAt itself, ignoring whatever the caller passed', async () => {
+    const stamped = new LocalStorageRepository(frozenClock);
+
+    await stamped.saveProject({ ...project, updatedAt: '1999-01-01T00:00:00.000Z' });
+
+    const [stored] = await stamped.listProjects();
+    expect(stored.updatedAt).toBe(FROZEN);
   });
 });

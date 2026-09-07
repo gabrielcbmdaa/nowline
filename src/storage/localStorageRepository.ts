@@ -9,12 +9,22 @@ const OVERRIDES_KEY = 'tt.overrides.v1';
 
 /** The only file in the app allowed to mention localStorage. */
 export class LocalStorageRepository implements BlockRepository {
+  /**
+   * The clock is a parameter so a test can freeze it. Every updatedAt in the
+   * app comes from here and from nowhere else: one writer cannot forget.
+   */
+  constructor(private readonly now: () => Date = () => new Date()) {}
+
+  private stamp<T>(row: T): T & { updatedAt: string } {
+    return { ...row, updatedAt: this.now().toISOString() };
+  }
+
   async listProjects(): Promise<Project[]> {
     return this.read<Project>(PROJECTS_KEY);
   }
 
   async saveProject(project: Project): Promise<void> {
-    this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), project));
+    this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), this.stamp(project)));
   }
 
   async deleteProject(id: string): Promise<void> {
@@ -36,7 +46,7 @@ export class LocalStorageRepository implements BlockRepository {
   }
 
   async savePlan(plan: BlockPlan): Promise<void> {
-    this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), plan));
+    this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), this.stamp(plan)));
   }
 
   async deletePlan(id: string): Promise<void> {
@@ -66,7 +76,7 @@ export class LocalStorageRepository implements BlockRepository {
   async saveOverride(override: BlockOverride): Promise<void> {
     this.write(
       OVERRIDES_KEY,
-      upsert(this.read<BlockOverride>(OVERRIDES_KEY), override),
+      upsert(this.read<BlockOverride>(OVERRIDES_KEY), this.stamp(override)),
     );
   }
 
