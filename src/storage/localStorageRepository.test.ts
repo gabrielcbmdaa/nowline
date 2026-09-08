@@ -244,6 +244,30 @@ describe('LocalStorageRepository', () => {
     ]);
   });
 
+  it('migrates an override without adding a deletedAt key', async () => {
+    const legacyOverride = {
+      id: 'o1',
+      planId: 'p1',
+      date: '2026-09-03',
+      status: 'done',
+      actualStart: '2026-09-03T05:00:00.000Z',
+      actualEnd: '2026-09-03T06:00:00.000Z',
+      startMinute: null,
+      durationMinutes: null,
+    };
+    localStorage.setItem('tt.overrides.v1', JSON.stringify([legacyOverride]));
+
+    const migrated = new LocalStorageRepository(frozenClock);
+    await migrated.listOverrides();
+
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]')[0] as Record<
+      string,
+      unknown
+    >;
+    expect(stored).toEqual({ ...legacyOverride, updatedAt: FROZEN });
+    expect(Object.prototype.hasOwnProperty.call(stored, 'deletedAt')).toBe(false);
+  });
+
   it('migrates before a first write, so no v1 row is stranded', async () => {
     localStorage.setItem('tt.plans.v1', JSON.stringify([{ ...plan, id: 'old' }]));
 
