@@ -94,8 +94,8 @@ describe('BlockEditorSheet', () => {
 
   it('keeps the precise message when a tracked correction is invalid, without reporting it', async () => {
     const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
-    localStorage.setItem('tt.plans.v1', JSON.stringify([plan]));
-    localStorage.setItem('tt.overrides.v1', JSON.stringify([trackedOverride]));
+    localStorage.setItem('nowline.plans.v2', JSON.stringify([plan]));
+    localStorage.setItem('nowline.overrides.v2', JSON.stringify([trackedOverride]));
     await loadAll();
     render(
       <BlockEditorSheet planId="p1" date={DATE} defaultStartMinute={9 * 60} onClose={() => {}} />,

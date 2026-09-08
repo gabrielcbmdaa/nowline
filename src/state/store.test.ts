@@ -30,11 +30,11 @@ describe('store', () => {
       durationMinutes: null,
       updatedAt: new Date(2026, 8, 3, 9, 0, 0).toISOString(),
     };
-    localStorage.setItem('tt.overrides.v1', JSON.stringify([hiddenRunning]));
+    localStorage.setItem('nowline.overrides.v2', JSON.stringify([hiddenRunning]));
 
     await startTimerFor('p-this', '2026-09-03');
 
-    const stored = JSON.parse(localStorage.getItem('tt.overrides.v1')!) as BlockOverride[];
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2')!) as BlockOverride[];
     const running = stored.filter((override) => override.status === 'running');
     expect(running).toHaveLength(1);
     expect(running[0].planId).toBe('p-this');

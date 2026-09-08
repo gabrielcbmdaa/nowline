@@ -108,7 +108,9 @@ describe('LocalStorageRepository', () => {
   it('recovers from corrupt storage instead of crashing, and says so', async () => {
     // Silenced on purpose: the warning is the point of the test, not noise from it.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    localStorage.setItem('tt.projects.v1', 'not json at all');
+    // The live v2 key, not the legacy one: this covers the read path every save and
+    // load goes through, not the one-time migration's copy of legacy rows.
+    localStorage.setItem('nowline.projects.v2', 'not json at all');
 
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
     expect(warn).toHaveBeenCalledOnce();
@@ -117,16 +119,16 @@ describe('LocalStorageRepository', () => {
   });
 
   it('drops a null entry instead of returning it', async () => {
-    localStorage.setItem('tt.projects.v1', '[null]');
+    localStorage.setItem('nowline.projects.v2', '[null]');
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
   });
 
   it('drops a string entry instead of returning it', async () => {
-    localStorage.setItem('tt.projects.v1', '["not an object"]');
+    localStorage.setItem('nowline.projects.v2', '["not an object"]');
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
   });
 
-  it('drops a row with no id', async () => {
+  it('drops a legacy row with no id during migration, instead of stranding it', async () => {
     localStorage.setItem('tt.projects.v1', JSON.stringify([{ name: 'Health' }]));
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
   });
@@ -138,5 +140,44 @@ describe('LocalStorageRepository', () => {
 
     const [stored] = await stamped.listProjects();
     expect(stored.updatedAt).toBe(FROZEN);
+  });
+
+  it('migrates the v1 keys into the v2 keys and leaves v1 untouched', async () => {
+    const legacyProject = {
+      id: 'health',
+      name: 'Health',
+      color: '#E5484D',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    };
+    localStorage.setItem('tt.projects.v1', JSON.stringify([legacyProject]));
+
+    const migrated = new LocalStorageRepository(frozenClock);
+    const projects = await migrated.listProjects();
+
+    expect(projects).toEqual([
+      { ...legacyProject, updatedAt: FROZEN, deletedAt: null },
+    ]);
+    expect(JSON.parse(localStorage.getItem('tt.projects.v1') ?? '[]')).toEqual([
+      legacyProject,
+    ]);
+  });
+
+  it('migrates before a first write, so no v1 row is stranded', async () => {
+    localStorage.setItem('tt.plans.v1', JSON.stringify([{ ...plan, id: 'old' }]));
+
+    const migrated = new LocalStorageRepository(frozenClock);
+    await migrated.savePlan({ ...plan, id: 'new' });
+
+    const ids = (await migrated.listPlans()).map((row) => row.id);
+    expect(ids).toEqual(['old', 'new']);
+  });
+
+  it('does not migrate a second time once the v2 key exists', async () => {
+    localStorage.setItem('nowline.projects.v2', JSON.stringify([]));
+    localStorage.setItem('tt.projects.v1', JSON.stringify([project]));
+
+    const migrated = new LocalStorageRepository(frozenClock);
+
+    expect(await migrated.listProjects()).toEqual([]);
   });
 });

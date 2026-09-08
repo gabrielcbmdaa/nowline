@@ -31,9 +31,13 @@ export function App() {
    * and they drifted apart once already. The message on screen is all the user needs;
    * the error object is all the next person to debug this has.
    *
-   * Nothing reaches here today — the repository catches its own storage failures and
-   * hands back an empty list — but this is the one catch a server implementation's
-   * failures would arrive through, and it was the last one still discarding them.
+   * A corrupt row never reaches here — the repository drops it on read instead — but
+   * a storage failure during the one-time legacy-key migration does: it only marks
+   * itself done once every pair has copied cleanly, so a write that fails partway
+   * (a full quota, say) surfaces here instead of quietly rendering an empty calendar,
+   * and Retry re-runs the same instance, which repeats only the pairs that did not
+   * finish. This is also the one catch a server implementation's failures would
+   * arrive through.
    */
   function load() {
     void loadAll().catch((error) => {
