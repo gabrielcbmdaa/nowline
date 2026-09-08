@@ -74,11 +74,16 @@ export class LocalStorageRepository implements BlockRepository {
       const stampedAt = this.now().toISOString();
       this.write(
         to,
-        legacy.map((row) =>
-          to === OVERRIDES_KEY
-            ? { ...row, updatedAt: stampedAt }
-            : { deletedAt: null, ...row, updatedAt: stampedAt },
-        ),
+        legacy.map((row) => {
+          if (to === OVERRIDES_KEY) {
+            const { deletedAt: _tombstone, ...withoutTombstone } = row as {
+              id: string;
+              deletedAt?: unknown;
+            };
+            return { ...withoutTombstone, updatedAt: stampedAt };
+          }
+          return { deletedAt: null, ...row, updatedAt: stampedAt };
+        }),
       );
     }
 
