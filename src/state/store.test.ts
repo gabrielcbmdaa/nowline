@@ -7,6 +7,7 @@ import {
   deleteProject,
   getState,
   loadAll,
+  saveOverride,
   savePlan,
   saveProject,
   startTimerFor,
@@ -187,5 +188,68 @@ describe('store', () => {
     expect(rawPlans[0].id).toBe('p1');
     expect(rawPlans[0].deletedAt).toBe(deletedAt);
     expect(rawPlans[0].updatedAt).toBe(deletedAt);
+  });
+
+  it('keeps the row in memory equal to the row in storage after a save', async () => {
+    vi.useFakeTimers();
+    const callerAt = new Date(2026, 8, 3, 9, 0, 0).toISOString();
+    const stampedAt = new Date(2026, 8, 3, 10, 0, 0).toISOString();
+    vi.setSystemTime(new Date(2026, 8, 3, 10, 0, 0));
+
+    const testProject: Project = {
+      id: 'health',
+      name: 'Health',
+      color: '#E5484D',
+      createdAt: callerAt,
+      updatedAt: callerAt,
+      deletedAt: null,
+    };
+    const testPlan: BlockPlan = {
+      id: 'p1',
+      title: 'Make exercise',
+      projectId: 'health',
+      startMinute: 300,
+      durationMinutes: 120,
+      recurrence: { type: 'daily' },
+      anchorDate: '2026-09-03',
+      endDate: null,
+      createdAt: callerAt,
+      updatedAt: callerAt,
+      deletedAt: null,
+    };
+    const testOverride: BlockOverride = {
+      id: 'o1',
+      planId: 'p1',
+      date: '2026-09-03',
+      status: 'done',
+      actualStart: callerAt,
+      actualEnd: callerAt,
+      startMinute: null,
+      durationMinutes: null,
+      updatedAt: callerAt,
+    };
+
+    await saveProject(testProject);
+    await savePlan(testPlan);
+    await saveOverride(testOverride);
+
+    const storedProject = (
+      JSON.parse(localStorage.getItem('nowline.projects.v2')!) as Project[]
+    ).find((row) => row.id === 'health');
+    const storedPlan = (
+      JSON.parse(localStorage.getItem('nowline.plans.v2')!) as BlockPlan[]
+    ).find((row) => row.id === 'p1');
+    const storedOverride = (
+      JSON.parse(localStorage.getItem('nowline.overrides.v2')!) as BlockOverride[]
+    ).find((row) => row.id === 'o1');
+
+    const memoryProject = getState().projects.find((row) => row.id === 'health');
+    const memoryPlan = getState().plans.find((row) => row.id === 'p1');
+    const memoryOverride = getState().overrides.find((row) => row.id === 'o1');
+
+    expect(storedProject?.updatedAt).toBe(stampedAt);
+    expect(memoryProject).toEqual(storedProject);
+    expect(memoryPlan).toEqual(storedPlan);
+    expect(memoryOverride).toEqual(storedOverride);
   });
 });

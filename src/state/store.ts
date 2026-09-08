@@ -66,17 +66,11 @@ export function setVisibleDate(visibleDate: string): void {
   if (state.visibleDate !== visibleDate) setState({ visibleDate });
 }
 
-function replaceById<T extends { id: string }>(rows: T[], row: T): T[] {
-  const index = rows.findIndex((existing) => existing.id === row.id);
-  if (index === -1) return [...rows, row];
-  const next = rows.slice();
-  next[index] = row;
-  return next;
-}
-
 export async function saveProject(project: Project): Promise<void> {
   await repository.saveProject(project);
-  setState({ projects: replaceById(state.projects, project) });
+  // Reload this kind instead of parking the caller's object: the repository
+  // just stamped updatedAt, and two copies that disagree is exactly the bug.
+  setState({ projects: await repository.listProjects() });
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -88,7 +82,7 @@ export async function deleteProject(id: string): Promise<void> {
 
 export async function savePlan(plan: BlockPlan): Promise<void> {
   await repository.savePlan(plan);
-  setState({ plans: replaceById(state.plans, plan) });
+  setState({ plans: await repository.listPlans() });
 }
 
 export async function deletePlan(id: string): Promise<void> {
@@ -100,7 +94,7 @@ export async function deletePlan(id: string): Promise<void> {
 
 export async function saveOverride(override: BlockOverride): Promise<void> {
   await repository.saveOverride(override);
-  setState({ overrides: replaceById(state.overrides, override) });
+  setState({ overrides: await repository.listOverrides() });
 }
 
 export function getRunningOverride(current: AppState = state): BlockOverride | null {
