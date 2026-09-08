@@ -730,4 +730,38 @@ describe('LocalStorageRepository', () => {
       spy.mockRestore();
     }
   });
+
+  it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+    await repoAt.clearPending({
+      projects: [],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    // deletePlan marks the plan pending before it drops overrides, so a blanket
+    // throwWhenWriting on the queue key would fire too early. Pin the unmark step.
+    const original = Storage.prototype.setItem;
+    let pendingWrites = 0;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === 'nowline.pending.v1') {
+        pendingWrites += 1;
+        if (pendingWrites === 2) throw new Error('quota exceeded');
+      }
+      return original.call(this, key, value);
+    });
+
+    try {
+      await expect(repoAt.deletePlan('p1')).rejects.toThrow('quota exceeded');
+      expect(JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]')).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
