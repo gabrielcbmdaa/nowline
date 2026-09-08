@@ -136,7 +136,7 @@ describe('store', () => {
     expect(plan?.updatedAt).toBe(deletedAt);
   });
 
-  it('reloads after deleting a plan, so the buried plan keeps its delete-time stamp in memory', async () => {
+  it('reloads after deleting a plan, so the buried plan keeps its delete-time stamp in storage', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 8, 3, 9, 0, 0));
 
@@ -170,16 +170,22 @@ describe('store', () => {
     localStorage.setItem('nowline.overrides.v2', JSON.stringify([hiddenRunning]));
     await loadAll();
 
-    // A hand-patched copy dropped the plan from memory outright; a reload keeps
-    // the buried row (filtering it out of the list is a later task) with its own
-    // fresh stamp, which only the repository's delete-time write can supply.
+    // A reload keeps the buried row in storage with its own fresh delete-time
+    // stamp, but listPlans filters it out, so the state does not hold deleted rows.
     const deletedAt = new Date(2026, 8, 3, 10, 0, 0).toISOString();
     vi.setSystemTime(new Date(2026, 8, 3, 10, 0, 0));
     await deletePlan('p1');
 
+    // The plan is deleted and filtered out of the list, so it is not in state.
     const plan = getState().plans.find((row) => row.id === 'p1');
-    expect(plan?.deletedAt).toBe(deletedAt);
-    expect(plan?.updatedAt).toBe(deletedAt);
+    expect(plan).toBeUndefined();
     expect(getState().overrides).toEqual([]);
+
+    // Verify the plan is still in storage with deletedAt set.
+    const rawPlans = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(rawPlans).toHaveLength(1);
+    expect(rawPlans[0].id).toBe('p1');
+    expect(rawPlans[0].deletedAt).toBe(deletedAt);
+    expect(rawPlans[0].updatedAt).toBe(deletedAt);
   });
 });

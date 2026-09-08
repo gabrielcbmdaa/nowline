@@ -78,7 +78,7 @@ export class LocalStorageRepository implements BlockRepository {
 
   async listProjects(): Promise<Project[]> {
     this.ensureMigrated();
-    return this.read<Project>(PROJECTS_KEY);
+    return this.read<Project>(PROJECTS_KEY).filter((row) => row.deletedAt === null);
   }
 
   async saveProject(project: Project): Promise<void> {
@@ -110,7 +110,7 @@ export class LocalStorageRepository implements BlockRepository {
 
   async listPlans(): Promise<BlockPlan[]> {
     this.ensureMigrated();
-    return this.read<BlockPlan>(PLANS_KEY);
+    return this.read<BlockPlan>(PLANS_KEY).filter((row) => row.deletedAt === null);
   }
 
   async savePlan(plan: BlockPlan): Promise<void> {

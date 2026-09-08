@@ -80,13 +80,22 @@ describe('LocalStorageRepository', () => {
     await repo.savePlan(plan);
     await repo.deleteProject('health');
 
-    // The project is buried, not gone: filtering it out of the list is Task 5's job.
+    // The project is buried and filtered out by listProjects. The plan that lost
+    // its project is NOT deleted (only unassigned), so it stays in listPlans.
     const projects = await repo.listProjects();
-    expect(projects).toHaveLength(1);
-    expect(projects[0].deletedAt).not.toBeNull();
+    expect(projects).toEqual([]);
+
     const plans = await repo.listPlans();
     expect(plans).toHaveLength(1);
+    expect(plans[0].id).toBe('p1');
     expect(plans[0].projectId).toBeNull();
+    expect(plans[0].deletedAt).toBeNull();
+
+    // Verify the project is still in storage with deletedAt set: buried, not removed.
+    const rawProjects = JSON.parse(localStorage.getItem('nowline.projects.v2') ?? '[]');
+    expect(rawProjects).toHaveLength(1);
+    expect(rawProjects[0].id).toBe('health');
+    expect(rawProjects[0].deletedAt).not.toBeNull();
   });
 
   it('removes the overrides of a deleted plan', async () => {
@@ -94,11 +103,14 @@ describe('LocalStorageRepository', () => {
     await repo.saveOverride(override('2026-09-03'));
     await repo.deletePlan('p1');
 
-    // The plan is buried, not gone: filtering it out of the list is Task 5's job.
-    const plans = await repo.listPlans();
-    expect(plans).toHaveLength(1);
-    expect(plans[0].deletedAt).not.toBeNull();
+    // The plan is buried and filtered out by listPlans. Its overrides are removed outright.
+    expect(await repo.listPlans()).toEqual([]);
     expect(await repo.listOverrides()).toEqual([]);
+
+    // Verify the plan is still in raw storage with deletedAt set.
+    const rawPlans = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(rawPlans).toHaveLength(1);
+    expect(rawPlans[0].deletedAt).not.toBeNull();
   });
 
   it('marks a plan as deleted instead of removing the row', async () => {
@@ -139,6 +151,18 @@ describe('LocalStorageRepository', () => {
     await repoAt.deletePlan('p1');
 
     expect(JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]')).toEqual([]);
+  });
+
+  it('hides buried rows from the lists the app reads', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+
+    await repoAt.deleteProject('health');
+    await repoAt.deletePlan('p1');
+
+    expect(await repoAt.listProjects()).toEqual([]);
+    expect(await repoAt.listPlans()).toEqual([]);
   });
 
   it('filters overrides by date range', async () => {
