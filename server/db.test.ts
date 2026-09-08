@@ -8,6 +8,15 @@ describe('the test database guard', () => {
     expect(() => assertSafeTestTarget('mongodb://127.0.0.1:27017', 'nowline')).toThrow();
   });
 
+  it('refuses a suffix with characters outside [a-z0-9_]', () => {
+    expect(() =>
+      assertSafeTestTarget('mongodb://127.0.0.1:27017', 'nowline_test_evil.path'),
+    ).toThrow();
+    expect(() =>
+      assertSafeTestTarget('mongodb://127.0.0.1:27017', 'nowline_test_evil-example'),
+    ).toThrow();
+  });
+
   it('refuses a host that is not this machine', () => {
     expect(() => assertSafeTestTarget('mongodb://127.0.0.1:27018', 'nowline_test')).toThrow();
     expect(() => assertSafeTestTarget('mongodb://example.com:27017', 'nowline_test')).toThrow();
@@ -23,6 +32,9 @@ describe('the test database guard', () => {
 
   it('allows the test database on this machine', () => {
     expect(() => assertSafeTestTarget('mongodb://127.0.0.1:27017', 'nowline_test')).not.toThrow();
+    expect(() =>
+      assertSafeTestTarget('mongodb://127.0.0.1:27017', 'nowline_test_a1b2c3d4'),
+    ).not.toThrow();
   });
 });
 
