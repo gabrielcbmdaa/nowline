@@ -236,10 +236,12 @@ export class LocalStorageRepository implements BlockRepository {
       const rows = parsed as Partial<PendingIds>;
       // A kind that is not an array used to become `[]`, which is a lost
       // upload: those rows stay unsent until they happen to change again.
+      // A number in an otherwise-shaped array is the same failure: a sync
+      // layer would look up an id that cannot match any row.
       if (
-        !Array.isArray(rows.projects) ||
-        !Array.isArray(rows.plans) ||
-        !Array.isArray(rows.overrides)
+        !isIdArray(rows.projects) ||
+        !isIdArray(rows.plans) ||
+        !isIdArray(rows.overrides)
       ) {
         return this.recoverCorruptPending(
           `Stored "${PENDING_KEY}" does not hold three id arrays`,
@@ -314,4 +316,8 @@ function upsert<T extends { id: string }>(rows: T[], row: T): T[] {
   const next = rows.slice();
   next[index] = row;
   return next;
+}
+
+function isIdArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((id) => typeof id === 'string');
 }

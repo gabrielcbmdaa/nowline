@@ -449,6 +449,31 @@ describe('LocalStorageRepository', () => {
     warn.mockRestore();
   });
 
+  it('treats a queue holding a non-string id as every stored row still being owed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    localStorage.setItem(
+      'nowline.pending.v1',
+      JSON.stringify({ projects: [], plans: [7], overrides: [] }),
+    );
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: ['health'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+    expect(warn).toHaveBeenCalled();
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain('nowline.pending.v1');
+    expect(message).toContain('treating every stored row as owed');
+
+    warn.mockRestore();
+  });
+
   it('treats a JSON array stored as the queue as every stored row still being owed', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
