@@ -557,7 +557,9 @@ body {
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: #fff;
+  /* A button does not inherit colour on its own: without this the glyph falls back
+     to the user agent white and fights the black title readableTextColor picked. */
+  color: inherit;
   cursor: pointer;
 }
 
