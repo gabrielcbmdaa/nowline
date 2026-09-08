@@ -32,7 +32,7 @@ describe('ProjectEditorSheet', () => {
 
     expect(await screen.findByText('Name is required')).toBeTruthy();
     expect(getState().projects).toEqual([]);
-    expect(localStorage.getItem('tt.projects.v1')).toBeNull();
+    expect(localStorage.getItem('nowline.projects.v2')).toBeNull();
   });
 
   it('tells the user when the write fails, and stays open', async () => {

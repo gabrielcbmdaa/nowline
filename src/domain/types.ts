@@ -6,6 +6,10 @@ export type Project = {
   color: string;
   /** ISO 8601 with seconds. */
   createdAt: string;
+  /** ISO 8601 with seconds. Written by the repository on every save. */
+  updatedAt: string;
+  /** ISO 8601 with seconds, or null while the row is alive. */
+  deletedAt: string | null;
 };
 
 export const PROJECT_COLORS = [
@@ -42,6 +46,10 @@ export type BlockPlan = {
   /** 'YYYY-MM-DD' or null for open-ended. */
   endDate: string | null;
   createdAt: string;
+  /** ISO 8601 with seconds. Written by the repository on every save. */
+  updatedAt: string;
+  /** ISO 8601 with seconds, or null while the row is alive. */
+  deletedAt: string | null;
 };
 
 export type OverrideStatus = 'scheduled' | 'running' | 'done' | 'deleted';
@@ -64,6 +72,8 @@ export type BlockOverride = {
   startMinute: number | null;
   /** Manual resize for this day only; shadows the plan. */
   durationMinutes: number | null;
+  /** ISO 8601 with seconds. Written by the repository on every save. */
+  updatedAt: string;
 };
 
 /** A plan and its override for one day, resolved into something drawable. */

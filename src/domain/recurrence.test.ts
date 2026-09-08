@@ -7,6 +7,8 @@ const project: Project = {
   name: 'Health',
   color: '#E5484D',
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 
 const projectsById = new Map([[project.id, project]]);
@@ -21,6 +23,8 @@ const dailyPlan: BlockPlan = {
   anchorDate: '2026-09-03',
   endDate: null,
   createdAt: '2026-09-03T00:00:00.000Z',
+  updatedAt: '2026-09-03T00:00:00.000Z',
+  deletedAt: null,
 };
 
 describe('planAppliesOn', () => {
@@ -79,6 +83,7 @@ describe('occurrencesForDay', () => {
       actualEnd: null,
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 3, 5, 31, 12).toISOString(),
     };
 
     const early = occurrencesForDay(
@@ -114,6 +119,7 @@ describe('occurrencesForDay', () => {
       actualEnd: new Date(2026, 8, 3, 6, 17, 40).toISOString(),
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 3, 6, 17, 40).toISOString(),
     };
     const occurrence = occurrencesForDay(
       [dailyPlan],
@@ -136,6 +142,7 @@ describe('occurrencesForDay', () => {
       actualEnd: new Date(2026, 8, 3, 6, 17, 40).toISOString(),
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 3, 6, 17, 40).toISOString(),
     };
     const tomorrow = occurrencesForDay(
       [dailyPlan],
@@ -159,6 +166,7 @@ describe('occurrencesForDay', () => {
       actualEnd: null,
       startMinute: null,
       durationMinutes: null,
+      updatedAt: '2026-09-03T00:00:00.000Z',
     };
     expect(
       occurrencesForDay([dailyPlan], indexOverrides([deleted]), projectsById, '2026-09-03', now),
@@ -178,6 +186,7 @@ describe('occurrencesForDay', () => {
       actualEnd: null,
       startMinute: 420, // 7:00
       durationMinutes: 60,
+      updatedAt: '2026-09-03T00:00:00.000Z',
     };
     const occurrence = occurrencesForDay(
       [dailyPlan],
@@ -230,6 +239,7 @@ describe('occurrencesForDay', () => {
       actualEnd: new Date(2026, 8, 7, 6, 17, 40).toISOString(),
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 7, 6, 17, 40).toISOString(),
     };
     const occurrences = occurrencesForDay(
       [tuesdaysOnly],
@@ -252,6 +262,7 @@ describe('occurrencesForDay', () => {
       actualEnd: null,
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 7, 5, 31, 12).toISOString(),
     };
     const occurrences = occurrencesForDay(
       [tuesdaysOnly],
@@ -275,6 +286,7 @@ describe('occurrencesForDay', () => {
       actualEnd: null,
       startMinute: 420,
       durationMinutes: 60,
+      updatedAt: '2026-09-07T00:00:00.000Z',
     };
     expect(
       occurrencesForDay(
@@ -297,6 +309,7 @@ describe('occurrencesForDay', () => {
       actualEnd: null,
       startMinute: null,
       durationMinutes: null,
+      updatedAt: '2026-09-07T00:00:00.000Z',
     };
     expect(
       occurrencesForDay(
@@ -357,6 +370,7 @@ describe('a block that runs past midnight belongs to the day it starts on', () =
       actualEnd: new Date(2026, 8, 4, 0, 20).toISOString(),
       startMinute: null,
       durationMinutes: null,
+      updatedAt: new Date(2026, 8, 4, 0, 20).toISOString(),
     };
     const [occurrence] = occurrencesForDay(
       [latePlan],

@@ -194,6 +194,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       }
     }
 
+    const now = new Date().toISOString();
     const next: BlockPlan = {
       id: plan?.id ?? newId(),
       title: trimmed,
@@ -204,7 +205,9 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       // A block that does not repeat lives on the day it was placed on.
       anchorDate: recurrence.type === 'none' ? date : plan?.anchorDate ?? date,
       endDate: plan?.endDate ?? null,
-      createdAt: plan?.createdAt ?? new Date().toISOString(),
+      createdAt: plan?.createdAt ?? now,
+      updatedAt: now,
+      deletedAt: null,
     };
 
     const hasPositionalOverride =
@@ -237,6 +240,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
           actualEnd: override.actualEnd,
           startMinute: null,
           durationMinutes: null,
+          updatedAt: now,
         });
       }
       await savePlan(next);
@@ -265,6 +269,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
         actualEnd: null,
         startMinute: null,
         durationMinutes: null,
+        updatedAt: new Date().toISOString(),
       });
       onClose();
     } catch (error) {

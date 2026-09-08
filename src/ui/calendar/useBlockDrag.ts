@@ -208,6 +208,7 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, onTap: () => void) 
         startMinute: mode === 'end' ? (existing?.startMinute ?? null) : committed.startMinute,
         durationMinutes:
           mode === 'move' ? (existing?.durationMinutes ?? null) : committed.durationMinutes,
+        updatedAt: new Date().toISOString(),
       });
     } catch (error) {
       reportError('Saving the dragged block failed', error);

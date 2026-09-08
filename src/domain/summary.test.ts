@@ -7,12 +7,16 @@ const health: Project = {
   name: 'Health',
   color: '#E5484D',
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 const work: Project = {
   id: 'work',
   name: 'Work',
   color: '#0091FF',
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 
 const exercise: BlockPlan = {
@@ -25,6 +29,8 @@ const exercise: BlockPlan = {
   anchorDate: '2026-09-01',
   endDate: null,
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 const coding: BlockPlan = { ...exercise, id: 'p2', title: 'Coding', projectId: 'work' };
 
@@ -38,6 +44,7 @@ function done(planId: string, date: string, from: Date, to: Date): BlockOverride
     actualEnd: to.toISOString(),
     startMinute: null,
     durationMinutes: null,
+    updatedAt: to.toISOString(),
   };
 }
 

@@ -18,6 +18,8 @@ const plan: BlockPlan = {
   anchorDate: DATE,
   endDate: null,
   createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
 };
 
 /** Ran from 09:00 to 10:00, so the sheet offers the tracked times for correction. */
@@ -30,6 +32,7 @@ const trackedOverride: BlockOverride = {
   actualEnd: new Date(2026, 8, 3, 10, 0, 0).toISOString(),
   startMinute: null,
   durationMinutes: null,
+  updatedAt: new Date(2026, 8, 3, 10, 0, 0).toISOString(),
 };
 
 function newBlock() {
@@ -91,8 +94,8 @@ describe('BlockEditorSheet', () => {
 
   it('keeps the precise message when a tracked correction is invalid, without reporting it', async () => {
     const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
-    localStorage.setItem('tt.plans.v1', JSON.stringify([plan]));
-    localStorage.setItem('tt.overrides.v1', JSON.stringify([trackedOverride]));
+    localStorage.setItem('nowline.plans.v2', JSON.stringify([plan]));
+    localStorage.setItem('nowline.overrides.v2', JSON.stringify([trackedOverride]));
     await loadAll();
     render(
       <BlockEditorSheet planId="p1" date={DATE} defaultStartMinute={9 * 60} onClose={() => {}} />,
