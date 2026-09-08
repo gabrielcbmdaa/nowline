@@ -43,6 +43,18 @@ function override(date: string): BlockOverride {
   };
 }
 
+function throwWhenWriting(keyToThrow: string) {
+  const original = Storage.prototype.setItem;
+  return vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+    this: Storage,
+    key: string,
+    value: string,
+  ) {
+    if (key === keyToThrow) throw new Error('quota exceeded');
+    return original.call(this, key, value);
+  });
+}
+
 describe('LocalStorageRepository', () => {
   let repo: LocalStorageRepository;
 
@@ -511,5 +523,127 @@ describe('LocalStorageRepository', () => {
     });
 
     warn.mockRestore();
+  });
+
+  it('still queues a saved project when the row write is the one that fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.listProjects();
+
+    const original = Storage.prototype.setItem;
+    let writes = 0;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      writes += 1;
+      if (writes === 2) throw new Error('quota exceeded');
+      return original.call(this, key, value);
+    });
+
+    try {
+      await expect(repoAt.saveProject(project)).rejects.toThrow('quota exceeded');
+      const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? 'null') as {
+        projects?: string[];
+      } | null;
+      expect(pending?.projects).toEqual(['health']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('still queues a saved plan when the row write is the one that fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.listPlans();
+
+    const spy = throwWhenWriting('nowline.plans.v2');
+    try {
+      await expect(repoAt.savePlan(plan)).rejects.toThrow('quota exceeded');
+      const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? 'null') as {
+        plans?: string[];
+      } | null;
+      expect(pending?.plans).toEqual(['p1']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('still queues a saved override when the row write is the one that fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.listOverrides();
+
+    const spy = throwWhenWriting('nowline.overrides.v2');
+    try {
+      await expect(repoAt.saveOverride(override('2026-09-03'))).rejects.toThrow('quota exceeded');
+      const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? 'null') as {
+        overrides?: string[];
+      } | null;
+      expect(pending?.overrides).toEqual(['o-2026-09-03']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // Pins the whole cascade, not only the project id: a refactor that marks the
+  // project, writes, then marks plans would still queue 'health' when the project
+  // write throws, and would stay green if this test only looked at projects.
+  it('still queues a deleted project and its unassigned plans when a row write fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.savePlan({ ...plan, id: 'p2' });
+    await repoAt.clearPending({
+      projects: ['health'],
+      plans: ['p1', 'p2'],
+      overrides: [],
+    });
+
+    const spy = throwWhenWriting('nowline.projects.v2');
+    try {
+      await expect(repoAt.deleteProject('health')).rejects.toThrow('quota exceeded');
+      const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? 'null') as {
+        projects?: string[];
+        plans?: string[];
+      } | null;
+      expect(pending?.projects).toEqual(['health']);
+      expect(pending?.plans).toEqual(['p1', 'p2']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('still queues a deleted plan when the row write is the one that fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+    await repoAt.clearPending({
+      projects: [],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    const spy = throwWhenWriting('nowline.plans.v2');
+    try {
+      await expect(repoAt.deletePlan('p1')).rejects.toThrow('quota exceeded');
+      const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? 'null') as {
+        plans?: string[];
+      } | null;
+      expect(pending?.plans).toEqual(['p1']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('still drops a deleted override from storage when the queue write is the one that fills storage', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    const spy = throwWhenWriting('nowline.pending.v1');
+    try {
+      await expect(repoAt.deleteOverride('o-2026-09-03')).rejects.toThrow('quota exceeded');
+      expect(JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]')).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

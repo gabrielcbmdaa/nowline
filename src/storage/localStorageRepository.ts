@@ -92,13 +92,24 @@ export class LocalStorageRepository implements BlockRepository {
 
   async saveProject(project: Project): Promise<void> {
     this.ensureMigrated();
-    this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), this.stamp(project)));
+    // Queue first: if the row write then fills storage, the id is still owed.
+    // The other way around persists a change the server never hears about.
     this.markPending('projects', project.id);
+    this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), this.stamp(project)));
   }
 
   async deleteProject(id: string): Promise<void> {
     this.ensureMigrated();
     const at = this.now().toISOString();
+
+    // Blocks outlive their project; they simply lose their colour. Each one is a
+    // row that changed, so each one needs its own new updatedAt: without it the
+    // other device would hand the colour straight back.
+    const plans = this.read<BlockPlan>(PLANS_KEY);
+    this.markPending('projects', id);
+    for (const row of plans) {
+      if (row.projectId === id) this.markPending('plans', row.id);
+    }
 
     this.write(
       PROJECTS_KEY,
@@ -106,21 +117,12 @@ export class LocalStorageRepository implements BlockRepository {
         row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
       ),
     );
-
-    // Blocks outlive their project; they simply lose their colour. Each one is a
-    // row that changed, so each one needs its own new updatedAt: without it the
-    // other device would hand the colour straight back.
-    const plans = this.read<BlockPlan>(PLANS_KEY);
     this.write(
       PLANS_KEY,
       plans.map((row) =>
         row.projectId === id ? { ...row, projectId: null, updatedAt: at } : row,
       ),
     );
-    this.markPending('projects', id);
-    for (const row of plans) {
-      if (row.projectId === id) this.markPending('plans', row.id);
-    }
   }
 
   async listPlans(): Promise<BlockPlan[]> {
@@ -130,13 +132,15 @@ export class LocalStorageRepository implements BlockRepository {
 
   async savePlan(plan: BlockPlan): Promise<void> {
     this.ensureMigrated();
-    this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), this.stamp(plan)));
     this.markPending('plans', plan.id);
+    this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), this.stamp(plan)));
   }
 
   async deletePlan(id: string): Promise<void> {
     this.ensureMigrated();
     const at = this.now().toISOString();
+
+    this.markPending('plans', id);
 
     this.write(
       PLANS_KEY,
@@ -154,7 +158,8 @@ export class LocalStorageRepository implements BlockRepository {
       OVERRIDES_KEY,
       overrides.filter((override) => override.planId !== id),
     );
-    this.markPending('plans', id);
+    // Unmark after the drop: doing it first would unqueue rows that are still
+    // stored if the write then fails.
     this.unmarkPending('overrides', dropped);
   }
 
@@ -171,11 +176,11 @@ export class LocalStorageRepository implements BlockRepository {
 
   async saveOverride(override: BlockOverride): Promise<void> {
     this.ensureMigrated();
+    this.markPending('overrides', override.id);
     this.write(
       OVERRIDES_KEY,
       upsert(this.read<BlockOverride>(OVERRIDES_KEY), this.stamp(override)),
     );
-    this.markPending('overrides', override.id);
   }
 
   async deleteOverride(id: string): Promise<void> {
