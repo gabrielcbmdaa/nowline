@@ -88,15 +88,22 @@ export class LocalStorageRepository implements BlockRepository {
 
   async deleteProject(id: string): Promise<void> {
     this.ensureMigrated();
+    const at = this.now().toISOString();
+
     this.write(
       PROJECTS_KEY,
-      this.read<Project>(PROJECTS_KEY).filter((project) => project.id !== id),
+      this.read<Project>(PROJECTS_KEY).map((row) =>
+        row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
+      ),
     );
-    // Blocks outlive their project; they simply lose their colour.
+
+    // Blocks outlive their project; they simply lose their colour. Each one is a
+    // row that changed, so each one needs its own new updatedAt: without it the
+    // other device would hand the colour straight back.
     this.write(
       PLANS_KEY,
-      this.read<BlockPlan>(PLANS_KEY).map((plan) =>
-        plan.projectId === id ? { ...plan, projectId: null } : plan,
+      this.read<BlockPlan>(PLANS_KEY).map((row) =>
+        row.projectId === id ? { ...row, projectId: null, updatedAt: at } : row,
       ),
     );
   }
@@ -113,11 +120,16 @@ export class LocalStorageRepository implements BlockRepository {
 
   async deletePlan(id: string): Promise<void> {
     this.ensureMigrated();
+    const at = this.now().toISOString();
+
     this.write(
       PLANS_KEY,
-      this.read<BlockPlan>(PLANS_KEY).filter((plan) => plan.id !== id),
+      this.read<BlockPlan>(PLANS_KEY).map((row) =>
+        row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
+      ),
     );
-    // An override with no plan is unreachable data; drop it with the plan.
+    // An override carries no tombstone of its own: it only exists hanging off a
+    // plan, so the plan's tombstone already tells the other device it is gone too.
     this.write(
       OVERRIDES_KEY,
       this.read<BlockOverride>(OVERRIDES_KEY).filter(

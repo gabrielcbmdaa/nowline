@@ -81,12 +81,9 @@ export async function saveProject(project: Project): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   await repository.deleteProject(id);
-  setState({
-    projects: state.projects.filter((project) => project.id !== id),
-    plans: state.plans.map((plan) =>
-      plan.projectId === id ? { ...plan, projectId: null } : plan,
-    ),
-  });
+  // Reload instead of patching memory: the repository just stamped rows this
+  // function does not see, and two copies that disagree is exactly the bug.
+  await loadAll();
 }
 
 export async function savePlan(plan: BlockPlan): Promise<void> {
@@ -96,10 +93,9 @@ export async function savePlan(plan: BlockPlan): Promise<void> {
 
 export async function deletePlan(id: string): Promise<void> {
   await repository.deletePlan(id);
-  setState({
-    plans: state.plans.filter((plan) => plan.id !== id),
-    overrides: state.overrides.filter((override) => override.planId !== id),
-  });
+  // Reload instead of patching memory: the repository just stamped rows this
+  // function does not see, and two copies that disagree is exactly the bug.
+  await loadAll();
 }
 
 export async function saveOverride(override: BlockOverride): Promise<void> {

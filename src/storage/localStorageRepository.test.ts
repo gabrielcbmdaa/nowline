@@ -80,7 +80,10 @@ describe('LocalStorageRepository', () => {
     await repo.savePlan(plan);
     await repo.deleteProject('health');
 
-    expect(await repo.listProjects()).toEqual([]);
+    // The project is buried, not gone: filtering it out of the list is Task 5's job.
+    const projects = await repo.listProjects();
+    expect(projects).toHaveLength(1);
+    expect(projects[0].deletedAt).not.toBeNull();
     const plans = await repo.listPlans();
     expect(plans).toHaveLength(1);
     expect(plans[0].projectId).toBeNull();
@@ -91,8 +94,51 @@ describe('LocalStorageRepository', () => {
     await repo.saveOverride(override('2026-09-03'));
     await repo.deletePlan('p1');
 
-    expect(await repo.listPlans()).toEqual([]);
+    // The plan is buried, not gone: filtering it out of the list is Task 5's job.
+    const plans = await repo.listPlans();
+    expect(plans).toHaveLength(1);
+    expect(plans[0].deletedAt).not.toBeNull();
     expect(await repo.listOverrides()).toEqual([]);
+  });
+
+  it('marks a plan as deleted instead of removing the row', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+
+    await repoAt.deletePlan('p1');
+
+    const raw = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(raw).toHaveLength(1);
+    expect(raw[0].deletedAt).toBe(FROZEN);
+  });
+
+  it('bumps updatedAt on every plan that loses its project', async () => {
+    // Two different clocks, on purpose: with one frozen clock the save and the
+    // delete would land on the same instant, and the assertion below could pass
+    // whether or not the cascade actually rewrites updatedAt.
+    const savedAt = '2026-09-06T10:00:00.000Z';
+    const repoWhenSaved = new LocalStorageRepository(() => new Date(savedAt));
+    const repoWhenDeleted = new LocalStorageRepository(frozenClock);
+
+    await repoWhenSaved.saveProject(project);
+    await repoWhenSaved.savePlan(plan);
+
+    await repoWhenDeleted.deleteProject('health');
+
+    const raw = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(raw[0].projectId).toBeNull();
+    expect(raw[0].updatedAt).not.toBe(savedAt);
+    expect(raw[0].updatedAt).toBe(FROZEN);
+  });
+
+  it('still drops the overrides of a deleted plan, since the plan carries the news', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    await repoAt.deletePlan('p1');
+
+    expect(JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]')).toEqual([]);
   });
 
   it('filters overrides by date range', async () => {
