@@ -250,4 +250,266 @@ describe('LocalStorageRepository', () => {
 
     expect(await migrated.listProjects()).toEqual([]);
   });
+
+  it('remembers which rows this device still owes the server', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: [],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+  });
+
+  it('remembers a project this device still owes the server', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+
+    await repoAt.saveProject(project);
+
+    expect((await repoAt.listPending()).projects).toEqual(['health']);
+  });
+
+  it('queues every plan that loses its project', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.savePlan({ ...plan, id: 'p2' });
+
+    await repoAt.clearPending({
+      projects: ['health'],
+      plans: ['p1', 'p2'],
+      overrides: [],
+    });
+
+    await repoAt.deleteProject('health');
+
+    const pending = await repoAt.listPending();
+    expect(pending.projects).toEqual(['health']);
+    expect(pending.plans).toEqual(['p1', 'p2']);
+  });
+
+  it('forgets a row once it has been sent', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+
+    await repoAt.clearPending({ projects: [], plans: ['p1'], overrides: [] });
+
+    expect((await repoAt.listPending()).plans).toEqual([]);
+  });
+
+  it('drops an override from the queue when its plan is deleted', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    await repoAt.deletePlan('p1');
+
+    const pending = await repoAt.listPending();
+    expect(pending.plans).toEqual(['p1']);
+    expect(pending.overrides).toEqual([]);
+  });
+
+  it('drops an override from the queue when the override itself is deleted', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    await repoAt.deleteOverride('o-2026-09-03');
+
+    const pending = await repoAt.listPending();
+    expect(pending.plans).toEqual(['p1']);
+    expect(pending.overrides).toEqual([]);
+  });
+
+  it('hands back independent pending arrays so a caller cannot poison later reads', async () => {
+    const first = await repo.listPending();
+    first.plans.push('ghost');
+
+    expect((await repo.listPending()).plans).toEqual([]);
+  });
+
+  it('treats a corrupt queue as every stored row still being owed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+    await repoAt.deleteProject('health');
+
+    localStorage.setItem('nowline.pending.v1', 'not json at all');
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: ['health'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    localStorage.setItem('nowline.pending.v1', 'null');
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: ['health'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    warn.mockRestore();
+  });
+
+  it('treats a missing queue as nothing pending, even when rows exist', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    localStorage.removeItem('nowline.pending.v1');
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: [],
+      plans: [],
+      overrides: [],
+    });
+  });
+
+  it('treats an empty-string queue as every stored row still being owed, and warns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    localStorage.setItem('nowline.pending.v1', '');
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: ['health'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+    expect(warn).toHaveBeenCalled();
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain('nowline.pending.v1');
+    expect(message).toContain('treating every stored row as owed');
+
+    warn.mockRestore();
+  });
+
+  it('treats a queue whose kinds are not all arrays as every stored row still being owed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    localStorage.setItem('nowline.pending.v1', JSON.stringify({ projects: 'oops' }));
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: ['health'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    warn.mockRestore();
+  });
+
+  it('treats a JSON array stored as the queue as every stored row still being owed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    localStorage.setItem('nowline.pending.v1', '[]');
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: ['health'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    warn.mockRestore();
+  });
+
+  it('keeps a queue that legitimately holds empty arrays', async () => {
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+
+    localStorage.setItem(
+      'nowline.pending.v1',
+      JSON.stringify({ projects: [], plans: ['p1'], overrides: [] }),
+    );
+
+    expect(await repoAt.listPending()).toEqual({
+      projects: [],
+      plans: ['p1'],
+      overrides: [],
+    });
+  });
+
+  it('warns when recovering a corrupt queue, naming the damage and the repair', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+
+    const shapes = [
+      'null',
+      '[]',
+      JSON.stringify({ projects: 'oops' }),
+      'not json at all',
+    ];
+
+    for (const raw of shapes) {
+      warn.mockClear();
+      localStorage.setItem('nowline.pending.v1', raw);
+      await repoAt.listPending();
+      expect(warn).toHaveBeenCalled();
+      const message = String(warn.mock.calls[0][0]);
+      expect(message).toContain('nowline.pending.v1');
+      expect(message).toContain('treating every stored row as owed');
+    }
+
+    warn.mockRestore();
+  });
+
+  it('does not warn when the queue is missing or holds empty arrays', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+
+    localStorage.removeItem('nowline.pending.v1');
+    await repoAt.listPending();
+    expect(warn).not.toHaveBeenCalled();
+
+    localStorage.setItem(
+      'nowline.pending.v1',
+      JSON.stringify({ projects: [], plans: ['p1'], overrides: [] }),
+    );
+    await repoAt.listPending();
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  it('rewrites a recovered queue on the next save, so later reads see the healed key', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repoAt = new LocalStorageRepository(frozenClock);
+    await repoAt.saveProject(project);
+    await repoAt.savePlan(plan);
+    await repoAt.saveOverride(override('2026-09-03'));
+
+    localStorage.setItem('nowline.pending.v1', 'not json at all');
+
+    await repoAt.saveProject({ ...project, id: 'work', name: 'Work' });
+
+    expect(JSON.parse(localStorage.getItem('nowline.pending.v1') ?? '')).toEqual({
+      projects: ['health', 'work'],
+      plans: ['p1'],
+      overrides: ['o-2026-09-03'],
+    });
+
+    warn.mockRestore();
+  });
 });

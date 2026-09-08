@@ -6,6 +6,15 @@ import type { BlockRepository } from './repository';
 const PROJECTS_KEY = 'nowline.projects.v2';
 const PLANS_KEY = 'nowline.plans.v2';
 const OVERRIDES_KEY = 'nowline.overrides.v2';
+const PENDING_KEY = 'nowline.pending.v1';
+
+export type PendingIds = {
+  projects: string[];
+  plans: string[];
+  overrides: string[];
+};
+
+const nothingPending = (): PendingIds => ({ projects: [], plans: [], overrides: [] });
 
 /**
  * The keys this app was born with, under the name it had before Nowline. They
@@ -84,6 +93,7 @@ export class LocalStorageRepository implements BlockRepository {
   async saveProject(project: Project): Promise<void> {
     this.ensureMigrated();
     this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), this.stamp(project)));
+    this.markPending('projects', project.id);
   }
 
   async deleteProject(id: string): Promise<void> {
@@ -100,12 +110,17 @@ export class LocalStorageRepository implements BlockRepository {
     // Blocks outlive their project; they simply lose their colour. Each one is a
     // row that changed, so each one needs its own new updatedAt: without it the
     // other device would hand the colour straight back.
+    const plans = this.read<BlockPlan>(PLANS_KEY);
     this.write(
       PLANS_KEY,
-      this.read<BlockPlan>(PLANS_KEY).map((row) =>
+      plans.map((row) =>
         row.projectId === id ? { ...row, projectId: null, updatedAt: at } : row,
       ),
     );
+    this.markPending('projects', id);
+    for (const row of plans) {
+      if (row.projectId === id) this.markPending('plans', row.id);
+    }
   }
 
   async listPlans(): Promise<BlockPlan[]> {
@@ -116,6 +131,7 @@ export class LocalStorageRepository implements BlockRepository {
   async savePlan(plan: BlockPlan): Promise<void> {
     this.ensureMigrated();
     this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), this.stamp(plan)));
+    this.markPending('plans', plan.id);
   }
 
   async deletePlan(id: string): Promise<void> {
@@ -130,12 +146,16 @@ export class LocalStorageRepository implements BlockRepository {
     );
     // An override carries no tombstone of its own: it only exists hanging off a
     // plan, so the plan's tombstone already tells the other device it is gone too.
+    const overrides = this.read<BlockOverride>(OVERRIDES_KEY);
+    const dropped = overrides
+      .filter((override) => override.planId === id)
+      .map((override) => override.id);
     this.write(
       OVERRIDES_KEY,
-      this.read<BlockOverride>(OVERRIDES_KEY).filter(
-        (override) => override.planId !== id,
-      ),
+      overrides.filter((override) => override.planId !== id),
     );
+    this.markPending('plans', id);
+    this.unmarkPending('overrides', dropped);
   }
 
   async listOverrides(fromDate?: string, toDate?: string): Promise<BlockOverride[]> {
@@ -155,6 +175,7 @@ export class LocalStorageRepository implements BlockRepository {
       OVERRIDES_KEY,
       upsert(this.read<BlockOverride>(OVERRIDES_KEY), this.stamp(override)),
     );
+    this.markPending('overrides', override.id);
   }
 
   async deleteOverride(id: string): Promise<void> {
@@ -163,6 +184,95 @@ export class LocalStorageRepository implements BlockRepository {
       OVERRIDES_KEY,
       this.read<BlockOverride>(OVERRIDES_KEY).filter((o) => o.id !== id),
     );
+    this.unmarkPending('overrides', [id]);
+  }
+
+  /**
+   * Sync uploads what the queue lists, and nothing else. A corrupt queue
+   * is therefore a lost upload, not an extra one: those rows stay unsent
+   * until they happen to change again. Recover by treating every row this
+   * device still holds as owed — including tombstones, which have to reach
+   * the server like any other change. Recovering is a real event; swallow
+   * it and the next person debugging starts from the symptom alone.
+   */
+  private recoverCorruptPending(whatWasWrong: string, detail: unknown): PendingIds {
+    reportWarning(`${whatWasWrong}; treating every stored row as owed`, detail);
+    return this.everythingPending();
+  }
+
+  private everythingPending(): PendingIds {
+    return {
+      projects: this.read<Project>(PROJECTS_KEY).map((row) => row.id),
+      plans: this.read<BlockPlan>(PLANS_KEY).map((row) => row.id),
+      overrides: this.read<BlockOverride>(OVERRIDES_KEY).map((row) => row.id),
+    };
+  }
+
+  private readPending(): PendingIds {
+    try {
+      const raw = localStorage.getItem(PENDING_KEY);
+      // Absent (null): this device has never queued a change. That is not
+      // corruption. An empty string is the key present and damaged — a
+      // truncated write — and must fall through to parse, not this branch.
+      if (raw === null) return nothingPending();
+      const parsed: unknown = JSON.parse(raw);
+      // Arrays are objects. A stored `[]` would otherwise fall through and
+      // look like a queue whose three kinds are all missing.
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return this.recoverCorruptPending(
+          `Stored "${PENDING_KEY}" is not a pending-id object`,
+          parsed,
+        );
+      }
+      const rows = parsed as Partial<PendingIds>;
+      // A kind that is not an array used to become `[]`, which is a lost
+      // upload: those rows stay unsent until they happen to change again.
+      if (
+        !Array.isArray(rows.projects) ||
+        !Array.isArray(rows.plans) ||
+        !Array.isArray(rows.overrides)
+      ) {
+        return this.recoverCorruptPending(
+          `Stored "${PENDING_KEY}" does not hold three id arrays`,
+          parsed,
+        );
+      }
+      return {
+        projects: rows.projects,
+        plans: rows.plans,
+        overrides: rows.overrides,
+      };
+    } catch (error) {
+      return this.recoverCorruptPending(`Reading "${PENDING_KEY}" from storage failed`, error);
+    }
+  }
+
+  private markPending(kind: keyof PendingIds, id: string): void {
+    const pending = this.readPending();
+    if (!pending[kind].includes(id)) {
+      pending[kind] = [...pending[kind], id];
+    }
+    // Always write. After a corrupt read, `pending` is the recovered set
+    // and lives only in memory; returning early would leave the bad key.
+    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  }
+
+  private unmarkPending(kind: keyof PendingIds, ids: readonly string[]): void {
+    const pending = this.readPending();
+    pending[kind] = pending[kind].filter((id) => !ids.includes(id));
+    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  }
+
+  async listPending(): Promise<PendingIds> {
+    this.ensureMigrated();
+    return this.readPending();
+  }
+
+  async clearPending(ids: PendingIds): Promise<void> {
+    this.ensureMigrated();
+    this.unmarkPending('projects', ids.projects);
+    this.unmarkPending('plans', ids.plans);
+    this.unmarkPending('overrides', ids.overrides);
   }
 
   private read<T>(key: string): T[] {
