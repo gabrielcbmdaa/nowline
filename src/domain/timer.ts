@@ -98,3 +98,30 @@ export function runningHours(override: BlockOverride, now: Date): number {
   const startMs = new Date(override.actualStart).getTime();
   return (now.getTime() - startMs) / 3600000;
 }
+
+/**
+ * Two devices out of touch can each start a timer. Converging on the same rows
+ * is not the same as obeying "one timer at a time", so the rule has to be
+ * written down: the newest start wins, and the others end where it began —
+ * which is what startTimerFor already does on a single device. Equal starts
+ * break on id, which is the same on every device; array order is not.
+ *
+ * Returns only the rows that changed, so the caller knows exactly what to save.
+ */
+export function resolveConcurrentTimers(overrides: BlockOverride[]): BlockOverride[] {
+  const running = overrides.filter(
+    (override) => override.status === 'running' && override.actualStart,
+  );
+  if (running.length < 2) return [];
+
+  const winner = running.reduce((latest, candidate) =>
+    candidate.actualStart! > latest.actualStart! ||
+    (candidate.actualStart === latest.actualStart && candidate.id > latest.id)
+      ? candidate
+      : latest,
+  );
+
+  return running
+    .filter((override) => override.id !== winner.id)
+    .map((override) => stopTimer(override, new Date(winner.actualStart!)));
+}

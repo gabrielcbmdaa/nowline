@@ -4,6 +4,7 @@ import {
   RUNAWAY_TIMER_HOURS,
   correctTimes,
   newId,
+  resolveConcurrentTimers,
   runningHours,
   startTimer,
   stopTimer,
@@ -110,6 +111,53 @@ describe('timer', () => {
     const now = new Date(2026, 8, 3, 18, 0, 0);
     expect(runningHours(runningOverride(start), now)).toBe(13);
     expect(RUNAWAY_TIMER_HOURS).toBe(12);
+  });
+
+  it('keeps the timer that started last and closes the others where it began', () => {
+    const early = { ...runningOverride(new Date(2026, 8, 3, 9, 0, 0)), id: 'early' };
+    const late = { ...runningOverride(new Date(2026, 8, 3, 9, 30, 0)), id: 'late' };
+
+    const changed = resolveConcurrentTimers([early, late]);
+
+    expect(changed).toHaveLength(1);
+    expect(changed[0].id).toBe('early');
+    expect(changed[0].status).toBe('done');
+    expect(changed[0].actualEnd).toBe(late.actualStart);
+  });
+
+  it('leaves a single running timer alone', () => {
+    expect(resolveConcurrentTimers([runningOverride(new Date(2026, 8, 3, 9, 0, 0))])).toEqual(
+      [],
+    );
+  });
+
+  it('breaks a start-time tie on id so two devices pick the same winner', () => {
+    const sameStart = new Date(2026, 8, 3, 9, 0, 0);
+    // Smaller id first: a reduce that keeps the first equal start would pick
+    // 'aaa'. The greater id must win regardless of array order.
+    const smaller = { ...runningOverride(sameStart), id: 'aaa' };
+    const greater = { ...runningOverride(sameStart), id: 'zzz' };
+
+    const changed = resolveConcurrentTimers([smaller, greater]);
+
+    expect(changed).toHaveLength(1);
+    expect(changed[0].id).toBe('aaa');
+    expect(changed[0].status).toBe('done');
+  });
+
+  it('records the full duration of a forgotten timer instead of capping it', () => {
+    // Decision, not just behaviour: a timer left running for however long
+    // records all of that time — it is not capped and not zeroed.
+    // Fourteen hours is above RUNAWAY_TIMER_HOURS (12) on purpose: a cap at
+    // the runaway threshold, at a smaller figure, or zeroing must all go red.
+    const forgotten = { ...runningOverride(new Date(2026, 8, 3, 0, 0, 0)), id: 'forgotten' };
+    const winner = { ...runningOverride(new Date(2026, 8, 3, 14, 0, 0)), id: 'winner' };
+
+    const changed = resolveConcurrentTimers([forgotten, winner]);
+
+    expect(changed).toHaveLength(1);
+    expect(changed[0].id).toBe('forgotten');
+    expect(trackedSeconds(changed[0])).toBe(50400);
   });
 });
 
