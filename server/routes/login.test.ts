@@ -1,17 +1,25 @@
 import type { Db } from 'mongodb';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { collections } from '../db.js';
 import { createApp } from '../index.js';
 import { identify } from '../identity.js';
 import { hashPassword } from '../passwords.js';
 import { call } from '../testing/http.js';
+import { MAX_FAILURES, WINDOW_MINUTES } from './login.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
 const post = (db: Db, path: string, body: unknown, token?: string) =>
   call(createApp(db), path, { method: 'POST', body, token });
 
+
 describe('login', () => {
-  beforeEach(async () => clearTestDb(await withTestDb()));
+  beforeEach(async () => {
+    vi.useRealTimers();
+    await clearTestDb(await withTestDb());
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   afterAll(closeTestDb);
 
   it('hands back a token that then identifies the user', async () => {
@@ -63,5 +71,116 @@ describe('login', () => {
     });
 
     expect(JSON.stringify(response.body)).not.toContain(passwordHash);
+  });
+
+  it('stops answering after several failures in a row', async () => {
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
+    }
+
+    const blocked = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'wrong',
+    });
+    expect(blocked.status).toBe(429);
+  });
+
+  it('blocks the correct password too, once the door is shut', async () => {
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
+    }
+
+    const withRightPassword = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'correct horse',
+    });
+    expect(withRightPassword.status).toBe(429);
+  });
+
+  it('forgets the failures once a successful login gets through', async () => {
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    const justUnderLimit = MAX_FAILURES - 1;
+    for (let attempt = 0; attempt < justUnderLimit; attempt += 1) {
+      await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
+    }
+    await post(db, '/api/auth/login', { username: 'gabriel', password: 'correct horse' });
+
+    for (let attempt = 0; attempt < justUnderLimit; attempt += 1) {
+      await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
+    }
+    // Two runs of (MAX_FAILURES - 1) failures would exceed MAX_FAILURES without the clear.
+    const stillOpen = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'correct horse',
+    });
+    expect(stillOpen.status).toBe(200);
+  });
+
+  it('reopens after the failure window expires', async () => {
+    vi.useFakeTimers();
+    const startedAt = new Date(2026, 8, 8, 10, 0, 0);
+    vi.setSystemTime(startedAt);
+
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+      await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
+    }
+    const blocked = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'correct horse',
+    });
+    expect(blocked.status).toBe(429);
+
+    vi.setSystemTime(new Date(startedAt.getTime() + (WINDOW_MINUTES + 1) * 60_000));
+    const reopened = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'correct horse',
+    });
+    expect(reopened.status).toBe(200);
+  });
+
+  it('stays shut until the failure window expires', async () => {
+    vi.useFakeTimers();
+    const startedAt = new Date(2026, 8, 8, 10, 0, 0);
+    vi.setSystemTime(startedAt);
+
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+      await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
+    }
+
+    vi.setSystemTime(new Date(startedAt.getTime() + (WINDOW_MINUTES - 1) * 60_000));
+    const stillShut = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'correct horse',
+    });
+    expect(stillShut.status).toBe(429);
   });
 });
