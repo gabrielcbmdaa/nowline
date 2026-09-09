@@ -1,7 +1,7 @@
 import { compareDateKeys } from '../domain/dates';
 import { reportWarning } from '../reportError';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
-import type { SyncChanges } from './apiClient';
+import type { SyncChanges, SyncRow } from './apiClient';
 import type { BlockRepository } from './repository';
 
 const PROJECTS_KEY = 'nowline.projects.v2';
@@ -349,6 +349,40 @@ export class LocalStorageRepository implements BlockRepository {
     this.unmarkPending('projects', ids.projects);
     this.unmarkPending('plans', ids.plans);
     this.unmarkPending('overrides', ids.overrides);
+  }
+
+  /**
+   * Write rows exactly as the server sent them: no new stamp, no queue entry.
+   *
+   * Using `savePlan` here would do both — it stamps with this device's clock
+   * and marks the id as owed — and the two devices would then trade the same
+   * row for ever, each one convinced it owes the other something.
+   *
+   * The newer `updatedAt` wins, which is the same rule the server applies. A
+   * row this device edited while the answer was in flight keeps its edit.
+   */
+  async applyFromServer(changes: SyncChanges): Promise<void> {
+    this.ensureMigrated();
+    const merge = <T extends { id: string; updatedAt: string }>(
+      key: string,
+      arriving: readonly SyncRow[],
+    ): void => {
+      if (arriving.length === 0) return;
+      const stored = this.read<T>(key);
+      const byId = new Map(stored.map((row) => [row.id, row]));
+
+      for (const row of arriving) {
+        const mine = byId.get(row.id);
+        if (mine === undefined || row.updatedAt > mine.updatedAt) {
+          byId.set(row.id, row as unknown as T);
+        }
+      }
+      this.write(key, [...byId.values()]);
+    };
+
+    merge<Project>(PROJECTS_KEY, changes.projects);
+    merge<BlockPlan>(PLANS_KEY, changes.plans);
+    merge<BlockOverride>(OVERRIDES_KEY, changes.overrides);
   }
 
   /**

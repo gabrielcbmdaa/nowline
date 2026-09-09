@@ -31,6 +31,7 @@ export interface BlockRepository {
 
   listPending(): Promise<PendingIds>;
   rowsToUpload(pending: PendingIds): Promise<SyncChanges>;
+  applyFromServer(changes: SyncChanges): Promise<void>;
   clearPendingUnchanged(sent: SentRows): Promise<void>;
   readSyncState(): Promise<SyncState>;
   writeSyncState(next: SyncState): Promise<void>;

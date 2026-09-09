@@ -843,6 +843,58 @@ describe('LocalStorageRepository', () => {
     expect((await repo.listPending()).plans).toEqual(['p2']);
   });
 
+  it('writes a downloaded row without stamping it or queueing it', async () => {
+    const repo = new LocalStorageRepository();
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...{ ...plan, id: 'p1', title: 'from the other device' }, updatedAt: '2026-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    // The stamp is the other device's, kept exactly: it is what decides who
+    // wins next time. Re-stamping here would make this device look newer than
+    // it is, and the two would hand the same row back and forth for ever.
+    expect(stored[0].updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect((await repo.listPending()).plans).toEqual([]);
+  });
+
+  it('keeps the local copy when it carries the newer stamp', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1', title: 'mine, edited just now' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...{ ...plan, id: 'p1', title: 'older, from the server' }, updatedAt: '2020-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    const plans = await repo.listPlans();
+    expect(plans[0].title).toBe('mine, edited just now');
+  });
+
+  it('lets a downloaded tombstone bury a row this device still shows', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...{ ...plan, id: 'p1' }, deletedAt: '2099-01-01T00:00:00.000Z', updatedAt: '2099-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    // Not `listPlans()` alone: an empty list is also what a row deleted outright
+    // looks like, so that assertion cannot tell burying from removing. The row
+    // has to still be there, carrying its tombstone — it is what this device
+    // will hand the next device that asks.
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(stored.map((row: { id: string; deletedAt: string | null }) => [row.id, row.deletedAt])).toEqual([
+      ['p1', '2099-01-01T00:00:00.000Z'],
+    ]);
+    expect(await repo.listPlans()).toEqual([]);
+  });
+
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.savePlan(plan);
