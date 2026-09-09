@@ -1,0 +1,74 @@
+import * as apiClient from './apiClient';
+import { isFailure } from './apiClient';
+import type { SentRows } from './localStorageRepository';
+import { repository as liveRepository } from './repository';
+import type { BlockRepository } from './repository';
+import { reportWarning } from '../reportError';
+
+export type SyncOutcome =
+  | { kind: 'done'; downloaded: number; stillOwed: number }
+  | { kind: 'offline' }
+  | { kind: 'unauthorized' }
+  | { kind: 'refused'; status: number | null };
+
+/**
+ * One round trip: everything this device owes goes up, everything it is
+ * missing comes down. Injectable on purpose — the app calls it with no
+ * arguments, and the tests hand it a server that never touches the network.
+ */
+export async function syncOnce(
+  deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
+): Promise<SyncOutcome> {
+  const send = deps.send ?? apiClient.sync;
+  const repo = deps.repo ?? liveRepository;
+
+  const { token, cursor } = await repo.readSyncState();
+  if (token === null) return { kind: 'unauthorized' };
+
+  const pending = await repo.listPending();
+  const outgoing = await repo.rowsToUpload(pending);
+
+  // Read the stamps BEFORE the request goes out. What comes back is confirmed
+  // against these, not against whatever the rows say when the answer lands.
+  const sent: SentRows = {
+    projects: outgoing.projects.map((row) => ({ id: row.id, updatedAt: row.updatedAt })),
+    plans: outgoing.plans.map((row) => ({ id: row.id, updatedAt: row.updatedAt })),
+    overrides: outgoing.overrides.map((row) => ({ id: row.id, updatedAt: row.updatedAt })),
+  };
+
+  const reply = await send(token, cursor, outgoing);
+
+  if (isFailure(reply)) {
+    if (reply.kind === 'unauthorized') {
+      // Drop the dead token, keep the cursor: the rows already downloaded are
+      // still downloaded, and a password prompt should not cost a full resync.
+      await repo.writeSyncState({ token: null, cursor });
+      return { kind: 'unauthorized' };
+    }
+    if (reply.kind === 'offline') return { kind: 'offline' };
+    reportWarning('The server refused a sync round', reply);
+    return { kind: 'refused', status: reply.status };
+  }
+
+  await repo.applyFromServer(reply.changes);
+
+  // Anything the server named as refused stays owed, however it was sent.
+  const refused = new Set(reply.rejected);
+  const keep = (rows: readonly { id: string; updatedAt: string }[]) =>
+    rows.filter((row) => !refused.has(row.id));
+
+  await repo.clearPendingUnchanged({
+    projects: keep(sent.projects),
+    plans: keep(sent.plans),
+    overrides: keep(sent.overrides),
+  });
+
+  await repo.writeSyncState({ token, cursor: reply.serverTime });
+
+  const downloaded =
+    reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
+  const left = await repo.listPending();
+  const stillOwed = left.projects.length + left.plans.length + left.overrides.length;
+
+  return { kind: 'done', downloaded, stillOwed };
+}
