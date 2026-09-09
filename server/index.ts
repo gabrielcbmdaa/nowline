@@ -2,6 +2,7 @@ import express from 'express';
 import type { Db } from 'mongodb';
 import { openDatabase } from './db.js';
 import { loginRoute } from './routes/login.js';
+import { syncRoute } from './routes/sync.js';
 
 /**
  * The app is built without listening, so a test can ask it for answers
@@ -16,6 +17,7 @@ export function createApp(db: Db): express.Express {
   });
 
   app.use(loginRoute(db));
+  app.use(syncRoute(db));
 
   // Anything unmatched answers JSON: a client that gets HTML here would
   // fail while parsing, and the real cause would never reach the report.
