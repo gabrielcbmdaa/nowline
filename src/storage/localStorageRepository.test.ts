@@ -589,6 +589,38 @@ describe('LocalStorageRepository', () => {
     warn.mockRestore();
   });
 
+  it('hands over a deleted row so the deletion can travel', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.deletePlan('p1');
+
+    const rows = await repo.rowsToUpload(await repo.listPending());
+
+    // listPlans() hides this row on purpose. The server has to hear about it,
+    // or the other device hands the block straight back.
+    expect(rows.plans.map((row) => row.id)).toEqual(['p1']);
+    expect(rows.plans[0].deletedAt).not.toBeNull();
+  });
+
+  it('hands over only what is owed, not the whole store', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    await repo.clearPending({ projects: [], plans: ['p1'], overrides: [] });
+
+    const rows = await repo.rowsToUpload(await repo.listPending());
+    expect(rows.plans.map((row) => row.id)).toEqual(['p2']);
+  });
+
+  it('skips an id whose row is no longer there', async () => {
+    const repo = new LocalStorageRepository();
+
+    // A queue can outlive its row: cleared storage, a migration that dropped a
+    // corrupt row. Uploading `undefined` would be worse than uploading nothing.
+    const rows = await repo.rowsToUpload({ projects: [], plans: ['ghost'], overrides: [] });
+    expect(rows.plans).toEqual([]);
+  });
+
   it('rewrites a recovered queue on the next save, so later reads see the healed key', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);

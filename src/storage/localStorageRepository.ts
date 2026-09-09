@@ -1,6 +1,7 @@
 import { compareDateKeys } from '../domain/dates';
 import { reportWarning } from '../reportError';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
+import type { SyncChanges } from './apiClient';
 import type { BlockRepository } from './repository';
 
 const PROJECTS_KEY = 'nowline.projects.v2';
@@ -285,6 +286,28 @@ export class LocalStorageRepository implements BlockRepository {
   async listPending(): Promise<PendingIds> {
     this.ensureMigrated();
     return this.readPending();
+  }
+
+  /**
+   * Rows by id, tombstones included. The three public list methods hide what
+   * carries a `deletedAt` because the calendar must not draw it; the server
+   * has to hear about it, or the other device hands the row straight back.
+   */
+  async rowsToUpload(pending: PendingIds): Promise<SyncChanges> {
+    this.ensureMigrated();
+    const pick = <T extends { id: string }>(key: string, ids: readonly string[]): T[] => {
+      if (ids.length === 0) return [];
+      const byId = new Map(this.read<T>(key).map((row) => [row.id, row]));
+      // A queue can outlive its row; an id with nothing behind it is dropped
+      // rather than sent as a hole.
+      return ids.map((id) => byId.get(id)).filter((row): row is T => row !== undefined);
+    };
+
+    return {
+      projects: pick<Project>(PROJECTS_KEY, pending.projects),
+      plans: pick<BlockPlan>(PLANS_KEY, pending.plans),
+      overrides: pick<BlockOverride>(OVERRIDES_KEY, pending.overrides),
+    };
   }
 
   async readSyncState(): Promise<SyncState> {
