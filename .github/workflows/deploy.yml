@@ -20,6 +20,16 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     # A hung job here would sit on the runner for hours; once deploys queue behind
     # each other, that also blocks every later deploy waiting its turn.
     timeout-minutes: 15
