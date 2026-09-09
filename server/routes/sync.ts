@@ -63,10 +63,6 @@ export function syncRoute(db: Db): Router {
       return;
     }
 
-    // One instant for the whole request. Stamped per row, two rows of the
-    // same upload could fall on opposite sides of a later cursor, and the
-    // other device would fetch half of it and never learn about the rest.
-    const serverTime = new Date().toISOString();
     const since = typeof request.body?.since === 'string' ? request.body.since : null;
     const incoming = request.body?.changes ?? {};
 
@@ -77,19 +73,33 @@ export function syncRoute(db: Db): Router {
       for (const row of arriving) {
         if (typeof row?.id !== 'string' || typeof row?.updatedAt !== 'string') continue;
 
-        await saveRow(store, userId, row, serverTime);
+        // Stamped when the row is written, which is what the spec says: the
+        // server stamps a row "when it saves it". A stamp taken at the top of
+        // the request can be older than a row another request has already
+        // stored, and a cursor built from it would step over that row.
+        await saveRow(store, userId, row, new Date().toISOString());
       }
     }
 
     const changes: Record<Kind, unknown[]> = { projects: [], plans: [], overrides: [] };
+
+    // The cursor is the newest stamp actually handed over, never the wall
+    // clock. A clock cursor can run ahead of a row another request is still
+    // writing, and `$gt` would then skip that row for good. `$gte` re-sends
+    // the row sitting exactly on the boundary; that costs one row per round
+    // and is why nothing is lost.
+    let cursor = since ?? '';
     for (const kind of KINDS) {
-      const filter = since ? { userId, serverUpdatedAt: { $gt: since } } : { userId };
-      changes[kind] = await collections(db)[kind]
-        .find(filter, { projection: { _id: 0 } })
-        .toArray();
+      const filter = since ? { userId, serverUpdatedAt: { $gte: since } } : { userId };
+      const rows = await collections(db)[kind].find(filter, { projection: { _id: 0 } }).toArray();
+      changes[kind] = rows;
+      for (const row of rows) {
+        const stamp = (row as { serverUpdatedAt?: unknown }).serverUpdatedAt;
+        if (typeof stamp === 'string' && stamp > cursor) cursor = stamp;
+      }
     }
 
-    response.json({ serverTime, changes });
+    response.json({ serverTime: cursor, changes });
   });
 
   return router;

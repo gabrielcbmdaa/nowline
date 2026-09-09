@@ -74,23 +74,76 @@ describe('sync', () => {
     expect((response.body as { changes: { plans: unknown[] } }).changes.plans).toEqual([]);
   });
 
-  it('gives back only what changed after the stamp it was handed', async () => {
+  it('still hands over a row stamped in the very millisecond of the last cursor', async () => {
     const db = await withTestDb();
+    await connect(db);
     const token = await issueToken(db, 'me');
 
-    const first = await post(
+    const first = await post(db, '/api/sync', { since: null, changes: { ...empty(), plans: [plan] } }, token);
+    const { serverTime } = first.body as { serverTime: string };
+
+    // What another device's request does when its stamp lands on the same
+    // millisecond as this one's cursor. Written straight to Mongo because the
+    // point is the stamp, not how it got there.
+    await collections(db).plans.insertOne({
+      ...plan,
+      id: 'same-ms',
+      userId: 'me',
+      serverUpdatedAt: serverTime,
+    });
+
+    const second = await post(db, '/api/sync', { since: serverTime, changes: empty() }, token);
+    const ids = (second.body as { changes: { plans: { id: string }[] } }).changes.plans.map((p) => p.id);
+
+    expect(ids).toContain('same-ms');
+  });
+
+  it('hands back a cursor that came from the rows, not from the clock', async () => {
+    const db = await withTestDb();
+    await connect(db);
+    const token = await issueToken(db, 'me');
+
+    const response = await post(db, '/api/sync', { since: null, changes: { ...empty(), plans: [plan] } }, token);
+    const { serverTime } = response.body as { serverTime: string };
+    const stored = await collections(db).plans.findOne({ userId: 'me', id: plan.id });
+
+    expect(serverTime).toBe(stored?.serverUpdatedAt);
+  });
+
+  it('does not send the whole collection back on every round', async () => {
+    const db = await withTestDb();
+    await connect(db);
+    const token = await issueToken(db, 'me');
+
+    await post(db, '/api/sync', { since: null, changes: { ...empty(), plans: [plan] } }, token);
+    const second = await post(
       db,
       '/api/sync',
-      {
-        since: null,
-        changes: { ...empty(), plans: [plan] },
-      },
+      { since: null, changes: { ...empty(), plans: [{ ...plan, id: 'p2' }] } },
       token,
     );
+    const { serverTime } = second.body as { serverTime: string };
+
+    const third = await post(db, '/api/sync', { since: serverTime, changes: empty() }, token);
+    const ids = (third.body as { changes: { plans: { id: string }[] } }).changes.plans.map((p) => p.id);
+
+    // 'p2' is the boundary row and comes back again — that is the price of
+    // never skipping it. 'p1', stamped earlier, must not.
+    expect(ids).not.toContain('p1');
+  });
+
+  it('gives back the boundary row and nothing older than it', async () => {
+    const db = await withTestDb();
+    await connect(db);
+    const token = await issueToken(db, 'me');
+
+    const first = await post(db, '/api/sync', { since: null, changes: { ...empty(), plans: [plan] } }, token);
     const { serverTime } = first.body as { serverTime: string };
 
     const second = await post(db, '/api/sync', { since: serverTime, changes: empty() }, token);
-    expect((second.body as { changes: { plans: unknown[] } }).changes.plans).toEqual([]);
+    const ids = (second.body as { changes: { plans: { id: string }[] } }).changes.plans.map((p) => p.id);
+
+    expect(ids).toEqual(['p1']);
   });
 
   it('keeps the newer copy when the same row arrives twice', async () => {
@@ -136,6 +189,25 @@ describe('sync', () => {
 
     const stored = await collections(db).plans.find({ userId: 'me', id: plan.id }).toArray();
     expect(stored.map((row) => row.title)).toEqual(['new']);
+  });
+
+  it('stamps each row as it is written, not once for the whole request', async () => {
+    const db = await withTestDb();
+    const token = await issueToken(db, 'me');
+
+    const many = Array.from({ length: 25 }, (_, index) => ({ ...plan, id: `p${index}` }));
+    await post(db, '/api/sync', { since: null, changes: { ...empty(), plans: many } }, token);
+
+    const stored = await collections(db).plans.find({ userId: 'me' }).toArray();
+    const stamps = stored.map((row) => row.serverUpdatedAt as string);
+
+    // One stamp for the whole request is a stamp taken before most of these
+    // rows existed, and the cursor is built from these stamps: a row stamped
+    // earlier than a cursor another request already handed out is a row that
+    // is never sent again. Twenty-five writes take longer than a millisecond,
+    // so a single shared stamp is the only way they all come out equal.
+    expect(new Set(stamps).size).toBeGreaterThan(1);
+    expect([...stamps]).toEqual([...stamps].sort());
   });
 
   it('keeps the newer copy when two uploads of the same row overlap', async () => {
