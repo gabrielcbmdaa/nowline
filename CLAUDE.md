@@ -9,7 +9,7 @@ pnpm only — npm and yarn are not used here.
 ```bash
 pnpm dev                                  # http://localhost:5124 (pinned; --host to reach it from a phone)
 pnpm dev:server                           # the node process on 3001 (3000 is another project)
-mongod --config /opt/homebrew/etc/mongod.conf   # the server tests need it; see below
+ulimit -n 64000 && nohup mongod --config /opt/homebrew/etc/mongod.conf &   # see below, and the ulimit is not optional
 pnpm test                                 # vitest run, the whole suite
 pnpm test src/domain/recurrence.test.ts   # one file
 pnpm test -t 'name of the test'           # one test by name
@@ -23,9 +23,11 @@ There is no linter. `tsc --noEmit` with `strict`, `noUnusedLocals` and `noUnused
 
 The default test environment is `node`. A test that needs a DOM or `localStorage` — rendering React is one case, reading a storage key another — needs `// @vitest-environment jsdom` as its first line.
 
-**The server tests need MongoDB running on 127.0.0.1:27017.** Bringing up the development environment means `pnpm dev` **and** a `mongod`, not just the first — without one, part of the suite fails on a connection error that reads like a bug in the code. Homebrew's `brew services start mongodb-community` does not work: MongoDB's own tap formula declares its service with a name and no `run`, so the generated launch agent has nothing to execute and launchd refuses it with `Bootstrap failed: 5`. `--fork` is no help either — MongoDB rejects it on macOS. Run it in a terminal of its own and leave it there.
+**The server tests need MongoDB running on 127.0.0.1:27017.** Bringing up the development environment means `pnpm dev` **and** a `mongod`, not just the first — without one, part of the suite fails on a connection error that reads like a bug in the code. Homebrew's `brew services start mongodb-community` does not work: MongoDB's own tap formula declares its service with a name and no `run`, so the generated launch agent has nothing to execute and launchd refuses it with `Bootstrap failed: 5`. `--fork` is no help either — MongoDB rejects it on macOS. `nohup ... &` is what replaces both: it survives the terminal closing, and it does not survive a reboot, which is deliberate — this machine's owner wants to start the database himself rather than find it already running.
 
-Those tests write to `nowline_test` and nowhere else, and the helper in `server/testing/mongo.ts` refuses any other database or host, because it drops collections. Port 27017 is always this machine; 27018 is always a tunnel to production.
+**Raise the open-file limit first, every time.** macOS gives a process 256 open files; MongoDB asks for 64000, warns about it on every startup, and then **dies** the moment it runs out mid-operation — which it did here on 2026-09-08, while a test was creating a collection. The tests drop and recreate collections constantly, so exhausting 256 descriptors is the normal case and not an unlucky one. A `mongod` started without the `ulimit` in front of it is a database that will fail during a test run and read like a bug in the code.
+
+Those tests write to `nowline_test_<hash of the test file's path>` and nowhere else — one database per test file, because vitest runs files in parallel and they would otherwise drop each other's collections mid-run. The helper in `server/testing/mongo.ts` refuses any other database or host, because dropping is what it does. Port 27017 is always this machine; 27018 is always a tunnel to production.
 
 ## Architecture
 
