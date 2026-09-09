@@ -13,10 +13,29 @@ export type SyncReply = { serverTime: string; changes: SyncChanges; rejected: st
  * `unauthorized` means the token is no good and repeating it is pointless
  * until somebody logs in again. `refused` is everything else.
  */
-export type ApiFailure = { kind: 'offline' | 'unauthorized' | 'refused'; status: number | null };
+export type ApiFailure = {
+  /** A marker, not decoration: `kind` alone is a field other result types have too. */
+  failed: true;
+  kind: 'offline' | 'unauthorized' | 'refused';
+  status: number | null;
+};
 
 export function isFailure(result: unknown): result is ApiFailure {
-  return typeof result === 'object' && result !== null && 'kind' in result;
+  return typeof result === 'object' && result !== null && (result as { failed?: unknown }).failed === true;
+}
+
+/** Fifteen seconds. A round that has not answered by then is not going to. */
+const GIVE_UP_AFTER_MS = 15_000;
+
+function isSyncReply(value: unknown): value is SyncReply {
+  if (typeof value !== 'object' || value === null) return false;
+  const row = value as { serverTime?: unknown; changes?: unknown; rejected?: unknown };
+  if (typeof row.serverTime !== 'string' || !Array.isArray(row.rejected)) return false;
+  const changes = row.changes as { projects?: unknown; plans?: unknown; overrides?: unknown } | null;
+  if (typeof changes !== 'object' || changes === null) return false;
+  return (
+    Array.isArray(changes.projects) && Array.isArray(changes.plans) && Array.isArray(changes.overrides)
+  );
 }
 
 async function post(path: string, body: unknown, token?: string): Promise<unknown | ApiFailure> {
@@ -25,20 +44,25 @@ async function post(path: string, body: unknown, token?: string): Promise<unknow
 
   let response: Response;
   try {
-    response = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
+    response = await fetch(path, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(GIVE_UP_AFTER_MS),
+    });
   } catch {
     // fetch only rejects when the request never got an answer at all.
-    return { kind: 'offline', status: null };
+    return { failed: true, kind: 'offline', status: null };
   }
 
-  if (response.status === 401) return { kind: 'unauthorized', status: 401 };
-  if (!response.ok) return { kind: 'refused', status: response.status };
+  if (response.status === 401) return { failed: true, kind: 'unauthorized', status: 401 };
+  if (!response.ok) return { failed: true, kind: 'refused', status: response.status };
 
   try {
     return await response.json();
   } catch {
     // A 200 whose body is not JSON is not the server we think it is.
-    return { kind: 'refused', status: response.status };
+    return { failed: true, kind: 'refused', status: response.status };
   }
 }
 
@@ -50,7 +74,7 @@ export async function login(
   if (isFailure(result)) return result;
 
   const token = (result as { token?: unknown }).token;
-  return typeof token === 'string' ? { token } : { kind: 'refused', status: 200 };
+  return typeof token === 'string' ? { token } : { failed: true, kind: 'refused', status: 200 };
 }
 
 export async function sync(
@@ -60,5 +84,8 @@ export async function sync(
 ): Promise<SyncReply | ApiFailure> {
   const result = await post('/api/sync', { since, changes }, token);
   if (isFailure(result)) return result;
-  return result as SyncReply;
+  // A cast is a promise; this is a check. The loop reads reply.changes, and a
+  // 200 that is not this shape would throw there — which the comment at the top
+  // of this file says must never happen.
+  return isSyncReply(result) ? result : { failed: true, kind: 'refused', status: 200 };
 }
