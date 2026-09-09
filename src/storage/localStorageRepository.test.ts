@@ -790,6 +790,59 @@ describe('LocalStorageRepository', () => {
     expect(await new LocalStorageRepository().readSyncState()).toEqual({ token: 'abc', cursor: null });
   });
 
+  it('keeps an id in the queue when the row changed while it was in flight', async () => {
+    // Two clocks, on purpose: two saves in one millisecond share an updatedAt,
+    // and the race this test pins is a stamp that moved between read and confirm.
+    const versionAAt = '2026-09-06T10:00:00.000Z';
+    const versionBAt = '2026-09-07T10:00:00.000Z';
+    const repo = new LocalStorageRepository(() => new Date(versionAAt));
+    await repo.savePlan({ ...plan, id: 'p1', title: 'version A' });
+
+    // What the upload loop sent, read before the request went out.
+    const sent = await repo.rowsToUpload(await repo.listPending());
+    const asSent = { id: 'p1', updatedAt: sent.plans[0].updatedAt as string };
+
+    // The owner edits while the request is in the air. markPending changes
+    // nothing: p1 is already queued.
+    const repoAfterEdit = new LocalStorageRepository(() => new Date(versionBAt));
+    await repoAfterEdit.savePlan({ ...plan, id: 'p1', title: 'version B' });
+
+    await repoAfterEdit.clearPendingUnchanged({ projects: [], plans: [asSent], overrides: [] });
+
+    // Version B is still owed. Clearing by id alone would lose it silently.
+    expect((await repoAfterEdit.listPending()).plans).toEqual(['p1']);
+  });
+
+  it('drops an id whose row is untouched since it was sent', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    const sent = await repo.rowsToUpload(await repo.listPending());
+
+    await repo.clearPendingUnchanged({
+      projects: [],
+      plans: [{ id: 'p1', updatedAt: sent.plans[0].updatedAt as string }],
+      overrides: [],
+    });
+
+    expect((await repo.listPending()).plans).toEqual([]);
+  });
+
+  it('leaves alone an id it was not told about', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    const sent = await repo.rowsToUpload(await repo.listPending());
+    const p1 = sent.plans.find((row) => row.id === 'p1');
+
+    await repo.clearPendingUnchanged({
+      projects: [],
+      plans: [{ id: 'p1', updatedAt: p1?.updatedAt as string }],
+      overrides: [],
+    });
+
+    expect((await repo.listPending()).plans).toEqual(['p2']);
+  });
+
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.savePlan(plan);

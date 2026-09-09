@@ -1,6 +1,11 @@
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import type { SyncChanges } from './apiClient';
-import { LocalStorageRepository, type PendingIds, type SyncState } from './localStorageRepository';
+import {
+  LocalStorageRepository,
+  type PendingIds,
+  type SentRows,
+  type SyncState,
+} from './localStorageRepository';
 
 /**
  * The seam a future server slots into. Everything above this interface is
@@ -26,6 +31,7 @@ export interface BlockRepository {
 
   listPending(): Promise<PendingIds>;
   rowsToUpload(pending: PendingIds): Promise<SyncChanges>;
+  clearPendingUnchanged(sent: SentRows): Promise<void>;
   readSyncState(): Promise<SyncState>;
   writeSyncState(next: SyncState): Promise<void>;
 }

@@ -18,6 +18,9 @@ export type PendingIds = {
   overrides: string[];
 };
 
+export type SentRow = { id: string; updatedAt: string };
+export type SentRows = { projects: SentRow[]; plans: SentRow[]; overrides: SentRow[] };
+
 const nothingPending = (): PendingIds => ({ projects: [], plans: [], overrides: [] });
 
 /**
@@ -346,6 +349,39 @@ export class LocalStorageRepository implements BlockRepository {
     this.unmarkPending('projects', ids.projects);
     this.unmarkPending('plans', ids.plans);
     this.unmarkPending('overrides', ids.overrides);
+  }
+
+  /**
+   * Drop from the queue only the ids whose row still carries the `updatedAt`
+   * that was sent. The queue holds ids and nothing else, so "forget p1" cannot
+   * express "forget p1 only if it has not changed since I read it" — and the
+   * gap between reading a row and confirming it is exactly one network round
+   * trip wide, which is long enough for the owner to type.
+   *
+   * Read and write happen here, in one synchronous stretch, for the same
+   * reason the server decides the winner inside the query: two steps with a
+   * gap between them are two chances to lose the second one.
+   */
+  async clearPendingUnchanged(sent: SentRows): Promise<void> {
+    this.ensureMigrated();
+    const stillTheSame = <T extends { id: string; updatedAt: string }>(
+      key: string,
+      rows: readonly SentRow[],
+    ): string[] => {
+      if (rows.length === 0) return [];
+      const byId = new Map(this.read<T>(key).map((row) => [row.id, row]));
+      return rows
+        .filter((row) => {
+          const stored = byId.get(row.id);
+          // A row that vanished is nothing this device still owes.
+          return stored === undefined || stored.updatedAt === row.updatedAt;
+        })
+        .map((row) => row.id);
+    };
+
+    this.unmarkPending('projects', stillTheSame<Project>(PROJECTS_KEY, sent.projects));
+    this.unmarkPending('plans', stillTheSame<BlockPlan>(PLANS_KEY, sent.plans));
+    this.unmarkPending('overrides', stillTheSame<BlockOverride>(OVERRIDES_KEY, sent.overrides));
   }
 
   private read<T>(key: string): T[] {
