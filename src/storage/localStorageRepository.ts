@@ -418,6 +418,33 @@ export class LocalStorageRepository implements BlockRepository {
     this.unmarkPending('overrides', stillTheSame<BlockOverride>(OVERRIDES_KEY, sent.overrides));
   }
 
+  /** Every row this device holds, tombstones included, counted for the first-sync question. */
+  async countLocalRows(): Promise<number> {
+    this.ensureMigrated();
+    return (
+      this.read<Project>(PROJECTS_KEY).length +
+      this.read<BlockPlan>(PLANS_KEY).length +
+      this.read<BlockOverride>(OVERRIDES_KEY).length
+    );
+  }
+
+  /**
+   * A copy of everything local, under a key nothing reads. Nothing in this app
+   * destroys the owner's data on a choice made once: the real data lives on a
+   * phone, where there is no console to dig it back out of.
+   */
+  async keepDiscardedCopy(stamp: string): Promise<void> {
+    this.ensureMigrated();
+    localStorage.setItem(
+      `nowline.discarded.${stamp}`,
+      JSON.stringify({
+        projects: this.read<Project>(PROJECTS_KEY),
+        plans: this.read<BlockPlan>(PLANS_KEY),
+        overrides: this.read<BlockOverride>(OVERRIDES_KEY),
+      }),
+    );
+  }
+
   private read<T>(key: string): T[] {
     try {
       const raw = localStorage.getItem(key);

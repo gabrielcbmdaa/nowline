@@ -35,6 +35,11 @@ export interface BlockRepository {
   clearPendingUnchanged(sent: SentRows): Promise<void>;
   readSyncState(): Promise<SyncState>;
   writeSyncState(next: SyncState): Promise<void>;
+
+  /** Every row this device holds, tombstones included, counted for the first-sync question. */
+  countLocalRows(): Promise<number>;
+  /** A copy of everything local, under a key nothing reads. */
+  keepDiscardedCopy(stamp: string): Promise<void>;
 }
 
 export const repository: BlockRepository = new LocalStorageRepository();

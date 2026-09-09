@@ -895,6 +895,21 @@ describe('LocalStorageRepository', () => {
     expect(await repo.listPlans()).toEqual([]);
   });
 
+  it('keeps a copy of everything local before anything is discarded', async () => {
+    await repo.saveProject({ ...project, id: 'pr1' });
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.saveOverride(override('2026-09-03'));
+
+    await repo.keepDiscardedCopy('2026-09-09');
+
+    const saved = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-09') ?? 'null');
+    // Nothing is destroyed. Same idea as keeping the tt.*.v1 keys: the owner's
+    // real data lives on a phone, where there is no console to dig it out of.
+    expect(saved.projects[0].id).toBe('pr1');
+    expect(saved.plans[0].id).toBe('p1');
+    expect(saved.overrides[0].id).toBe('o-2026-09-03');
+  });
+
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.savePlan(plan);

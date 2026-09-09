@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockPlan } from '../domain/types';
 import { LocalStorageRepository } from './localStorageRepository';
-import { syncOnce } from './sync';
+import { firstSyncDecision, syncOnce } from './sync';
 
 const plan: BlockPlan = {
   id: 'p1',
@@ -22,6 +22,26 @@ const emptyReply = (serverTime: string) => ({
   serverTime,
   changes: { projects: [], plans: [], overrides: [] },
   rejected: [],
+});
+
+describe('firstSyncDecision', () => {
+  it('uploads when the cloud is empty', () => {
+    expect(firstSyncDecision(34, 0)).toBe('upload-mine');
+  });
+
+  it('downloads when this device is empty', () => {
+    expect(firstSyncDecision(0, 120)).toBe('take-the-cloud');
+  });
+
+  it('asks when both sides have rows', () => {
+    // Ids are made per device, so merging does not lose data — it makes
+    // duplicates, and those get cleaned up by hand.
+    expect(firstSyncDecision(34, 120)).toBe('ask-the-owner');
+  });
+
+  it('uploads when neither side has anything, rather than asking about nothing', () => {
+    expect(firstSyncDecision(0, 0)).toBe('upload-mine');
+  });
 });
 
 describe('syncOnce', () => {

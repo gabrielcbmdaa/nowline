@@ -11,6 +11,23 @@ export type SyncOutcome =
   | { kind: 'unauthorized' }
   | { kind: 'refused'; status: number | null };
 
+export type FirstSyncDecision = 'upload-mine' | 'take-the-cloud' | 'ask-the-owner';
+
+/**
+ * What a device that has never synced should do, by what it finds on each
+ * side. Ids are generated per device, so a block called "Gym" made on the
+ * phone and another made on the laptop are two different rows: merging the
+ * two sides without asking does not lose anything, it silently doubles it.
+ *
+ * Pure arithmetic on two counts, so the screen in the next plan has nothing
+ * to decide — it only shows the numbers and reports the answer.
+ */
+export function firstSyncDecision(local: number, remote: number): FirstSyncDecision {
+  if (local > 0 && remote > 0) return 'ask-the-owner';
+  if (remote > 0) return 'take-the-cloud';
+  return 'upload-mine';
+}
+
 /**
  * One round trip: everything this device owes goes up, everything it is
  * missing comes down. Injectable on purpose — the app calls it with no
