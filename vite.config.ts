@@ -12,6 +12,14 @@ export default defineConfig({
      */
     port: 5124,
     strictPort: true,
+    /**
+     * The app always calls `/api/...` on its own origin, in development and in
+     * production alike. In production nginx forwards that path to the node
+     * process; here vite does. Pointing the app straight at 127.0.0.1:3001
+     * would be a second origin — CORS rules, and a different code path in
+     * development from the one that ships.
+     */
+    proxy: { '/api': 'http://127.0.0.1:3001' },
   },
   test: {
     environment: 'node',
