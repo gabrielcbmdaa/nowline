@@ -3,7 +3,7 @@ import { minutesSinceMidnight, toDateKey } from '../domain/dates';
 import { floorToQuarterHour } from '../domain/geometry';
 import type { Project } from '../domain/types';
 import { reportError } from '../reportError';
-import { loadAll, setTab, startClock, useAppState } from '../state/store';
+import { loadAll, setTab, startClock, startSyncing, useAppState } from '../state/store';
 import { Fab } from './Fab';
 import { TabBar } from './TabBar';
 import { CalendarScreen } from './calendar/CalendarScreen';
@@ -48,7 +48,16 @@ export function App() {
 
   useEffect(() => {
     load();
-    return startClock();
+    // Two things that outlive a render and have to be stopped together: the
+    // clock that makes running blocks grow, and the rounds that agree with the
+    // server. A `startSyncing` nobody calls is three of its four moments never
+    // happening in the app people actually open.
+    const stopClock = startClock();
+    const stopSyncing = startSyncing();
+    return () => {
+      stopClock();
+      stopSyncing();
+    };
   }, []);
 
   if (!state.loaded) {

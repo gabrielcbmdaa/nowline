@@ -1,0 +1,104 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
+
+vi.mock('../storage/sync', () => ({ syncOnce: vi.fn() }));
+
+import { syncOnce } from '../storage/sync';
+import { repository } from '../storage/repository';
+import { getState, loadAll, savePlan, startSyncing, syncNow } from './store';
+
+const round = syncOnce as Mock;
+
+const plan = {
+  id: 'p1',
+  title: 'Make exercise',
+  projectId: null,
+  startMinute: 300,
+  durationMinutes: 120,
+  recurrence: { type: 'daily' as const },
+  anchorDate: '2026-09-03',
+  endDate: null,
+  createdAt: '2026-09-03T00:00:00.000Z',
+  updatedAt: '2026-09-03T00:00:00.000Z',
+  deletedAt: null,
+};
+
+describe('the four moments a round happens', () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    vi.useRealTimers();
+    round.mockReset();
+    round.mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
+    await loadAll();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('re-reads storage when a round brought rows down', async () => {
+    // The store must not guess what arrived: only the repository knows what the
+    // merge left behind, so it reads again rather than trusting a count.
+    await repository.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'from-the-phone' }],
+      overrides: [],
+    });
+    round.mockResolvedValue({ kind: 'done', downloaded: 1, stillOwed: 0 });
+
+    await syncNow();
+
+    expect(getState().plans.map((row) => row.id)).toContain('from-the-phone');
+  });
+
+  it('does not re-read when nothing came down', async () => {
+    const reading = vi.spyOn(repository, 'listPlans');
+    round.mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
+
+    await syncNow();
+
+    // Every round would otherwise rebuild the whole screen for nothing, five
+    // minutes apart, for ever.
+    expect(reading).not.toHaveBeenCalled();
+  });
+
+  it('groups a burst of writes into one round', async () => {
+    vi.useFakeTimers();
+
+    // Dragging a block writes many times. One gesture is one round, not thirty
+    // requests; that is what the two-second wait buys.
+    await savePlan({ ...plan, startMinute: 300 });
+    await savePlan({ ...plan, startMinute: 330 });
+    await savePlan({ ...plan, startMinute: 360 });
+
+    expect(round).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(round).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again five minutes later without anybody touching anything', async () => {
+    vi.useFakeTimers();
+    const stop = startSyncing();
+    round.mockClear();
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(round).toHaveBeenCalledTimes(1);
+
+    stop();
+  });
+
+  it('stops asking once the caller says so', async () => {
+    vi.useFakeTimers();
+    const stop = startSyncing();
+    stop();
+    round.mockClear();
+
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+    // A component that unmounts and leaves an interval behind is a request
+    // every five minutes for as long as the tab lives.
+    expect(round).not.toHaveBeenCalled();
+  });
+});

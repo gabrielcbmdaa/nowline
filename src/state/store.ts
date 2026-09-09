@@ -3,6 +3,7 @@ import { toDateKey } from '../domain/dates';
 import { newId, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import { repository } from '../storage/repository';
+import { syncOnce } from '../storage/sync';
 
 export type TabId = 'calendar' | 'summary' | 'projects';
 
@@ -71,6 +72,7 @@ export async function saveProject(project: Project): Promise<void> {
   // Reload this kind instead of parking the caller's object: the repository
   // just stamped updatedAt, and two copies that disagree is exactly the bug.
   setState({ projects: await repository.listProjects() });
+  syncSoon();
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -78,11 +80,13 @@ export async function deleteProject(id: string): Promise<void> {
   // Reload instead of patching memory: the repository just stamped rows this
   // function does not see, and two copies that disagree is exactly the bug.
   await loadAll();
+  syncSoon();
 }
 
 export async function savePlan(plan: BlockPlan): Promise<void> {
   await repository.savePlan(plan);
   setState({ plans: await repository.listPlans() });
+  syncSoon();
 }
 
 export async function deletePlan(id: string): Promise<void> {
@@ -90,11 +94,13 @@ export async function deletePlan(id: string): Promise<void> {
   // Reload instead of patching memory: the repository just stamped rows this
   // function does not see, and two copies that disagree is exactly the bug.
   await loadAll();
+  syncSoon();
 }
 
 export async function saveOverride(override: BlockOverride): Promise<void> {
   await repository.saveOverride(override);
   setState({ overrides: await repository.listOverrides() });
+  syncSoon();
 }
 
 export function getRunningOverride(current: AppState = state): BlockOverride | null {
@@ -148,10 +154,50 @@ async function stopRunningTimerUnlocked(now: Date): Promise<void> {
 export async function startTimerFor(planId: string, date: string): Promise<void> {
   const now = new Date();
   await enqueueTimerTransition(() => startTimerForUnlocked(planId, date, now));
+  syncSoon();
 }
 
 export async function stopRunningTimer(now: Date = new Date()): Promise<void> {
   await enqueueTimerTransition(() => stopRunningTimerUnlocked(now));
+  syncSoon();
+}
+
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** One round, then refresh what is on screen if anything arrived. */
+export async function syncNow(): Promise<void> {
+  const outcome = await syncOnce();
+  if (outcome.kind === 'done' && outcome.downloaded > 0) await loadAll();
+}
+
+/**
+ * The four moments the design document names, and why each one is there:
+ * opening the app is when you are looking at it; coming back to the front is
+ * a phone leaving a pocket; two seconds after a write groups a drag into one
+ * request instead of thirty; five minutes is the safety net for a screen
+ * nobody is touching.
+ */
+export function startSyncing(): () => void {
+  void syncNow();
+
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void syncNow();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+
+  const every5Minutes = setInterval(() => void syncNow(), 5 * 60 * 1000);
+
+  return () => {
+    document.removeEventListener('visibilitychange', onVisible);
+    clearInterval(every5Minutes);
+    if (syncTimer !== null) clearTimeout(syncTimer);
+  };
+}
+
+/** Called by every mutating function, after the write. */
+function syncSoon(): void {
+  if (syncTimer !== null) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => void syncNow(), 2000);
 }
 
 /** Repaints every 30 s: half a minute is half a pixel, so nothing finer helps. */
