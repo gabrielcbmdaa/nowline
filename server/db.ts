@@ -2,7 +2,7 @@ import { MongoClient, type Db } from 'mongodb';
 
 export type SessionRow = { tokenHash: string; userId: string; createdAt: Date };
 export type UserRow = { _id?: unknown; username: string; passwordHash: string };
-export type AttemptRow = { key: string; failures: number; firstFailureAt: Date };
+export type AttemptRow = { key: string; attempts: number; firstFailureAt: Date };
 
 export function collections(db: Db) {
   return {

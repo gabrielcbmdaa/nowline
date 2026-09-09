@@ -1,11 +1,11 @@
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { collections } from '../db.js';
+import { collections, connect } from '../db.js';
 import { createApp } from '../index.js';
 import { identify } from '../identity.js';
 import { hashPassword } from '../passwords.js';
 import { call } from '../testing/http.js';
-import { MAX_FAILURES, WINDOW_MINUTES } from './login.js';
+import { MAX_ATTEMPTS, WINDOW_MINUTES } from './login.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
 const post = (db: Db, path: string, body: unknown, token?: string) =>
@@ -15,7 +15,9 @@ const post = (db: Db, path: string, body: unknown, token?: string) =>
 describe('login', () => {
   beforeEach(async () => {
     vi.useRealTimers();
-    await clearTestDb(await withTestDb());
+    const db = await withTestDb();
+    await clearTestDb(db);
+    await connect(db);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -80,7 +82,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
 
@@ -98,7 +100,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
 
@@ -116,7 +118,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    const justUnderLimit = MAX_FAILURES - 1;
+    const justUnderLimit = MAX_ATTEMPTS - 1;
     for (let attempt = 0; attempt < justUnderLimit; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
@@ -125,7 +127,7 @@ describe('login', () => {
     for (let attempt = 0; attempt < justUnderLimit; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
-    // Two runs of (MAX_FAILURES - 1) failures would exceed MAX_FAILURES without the clear.
+    // Two runs of (MAX_ATTEMPTS - 1) failures would exceed MAX_ATTEMPTS without the clear.
     const stillOpen = await post(db, '/api/auth/login', {
       username: 'gabriel',
       password: 'correct horse',
@@ -144,7 +146,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
     const blocked = await post(db, '/api/auth/login', {
@@ -172,7 +174,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
 
@@ -182,5 +184,45 @@ describe('login', () => {
       password: 'correct horse',
     });
     expect(stillShut.status).toBe(429);
+  });
+
+  it('counts guesses fired at the same time, not only one after another', async () => {
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    const guesses = Array.from({ length: MAX_ATTEMPTS + 7 }, () =>
+      post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' }),
+    );
+    const statuses = (await Promise.all(guesses)).map((r) => r.status);
+
+    // Every guess past the limit has to be refused, however they were fired.
+    expect(statuses.filter((s) => s === 429).length).toBeGreaterThanOrEqual(7);
+    // And refused on purpose: an upsert racing the unique index throws a
+    // duplicate-key error, which would come out of here as a 500.
+    expect(statuses.filter((s) => s >= 500)).toEqual([]);
+  });
+
+  it('takes as long to refuse a name that does not exist as one that does', async () => {
+    const db = await withTestDb();
+    await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    const time = async (username: string) => {
+      const started = performance.now();
+      await post(db, '/api/auth/login', { username, password: 'wrong' });
+      return performance.now() - started;
+    };
+
+    const known = await time('gabriel');
+    const unknown = await time('nobody-at-all');
+
+    // A ratio, not a fixed number of milliseconds: the point is that one path
+    // does not skip bcrypt entirely. Skipping it measured 4ms against 217ms.
+    expect(unknown).toBeGreaterThan(known * 0.5);
   });
 });
