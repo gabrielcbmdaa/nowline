@@ -24,6 +24,10 @@ export async function connect(db: Db): Promise<Db> {
   const c = collections(db);
   for (const rows of [c.projects, c.plans, c.overrides]) {
     await rows.createIndex({ userId: 1, serverUpdatedAt: 1 });
+    // An owner cannot have two rows with the same id. Without this, two
+    // overlapping uploads of a new row can insert two documents, and the
+    // conditional upsert in sync.ts has no way to fail when it must.
+    await rows.createIndex({ userId: 1, id: 1 }, { unique: true });
   }
   await c.users.createIndex({ username: 1 }, { unique: true });
   await c.sessions.createIndex({ tokenHash: 1 }, { unique: true });

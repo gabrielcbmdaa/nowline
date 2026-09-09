@@ -68,4 +68,25 @@ describe('the database', () => {
       sessions.insertOne({ tokenHash: 'same', userId: 'u2', createdAt: new Date() }),
     ).rejects.toThrow();
   });
+
+  it('refuses a second row with the same id for the same owner', async () => {
+    const db = await withTestDb();
+    await connect(db);
+
+    await collections(db).plans.insertOne({ userId: 'me', id: 'p1' });
+
+    await expect(collections(db).plans.insertOne({ userId: 'me', id: 'p1' })).rejects.toThrow(
+      /duplicate key/i,
+    );
+  });
+
+  it('lets two owners each have a row with the same id', async () => {
+    const db = await withTestDb();
+    await connect(db);
+
+    await collections(db).plans.insertOne({ userId: 'me', id: 'p1' });
+    await collections(db).plans.insertOne({ userId: 'them', id: 'p1' });
+
+    expect(await collections(db).plans.countDocuments({ id: 'p1' })).toBe(2);
+  });
 });

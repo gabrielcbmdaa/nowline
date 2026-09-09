@@ -1,7 +1,8 @@
 import type { Db } from 'mongodb';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { collections } from '../db.js';
+import { collections, connect } from '../db.js';
 import { createApp } from '../index.js';
+import { saveRow } from './sync.js';
 import { issueToken } from '../identity.js';
 import { call } from '../testing/http.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
@@ -26,7 +27,14 @@ const plan = {
 
 describe('sync', () => {
   beforeEach(async () => {
-    await clearTestDb(await withTestDb());
+    const db = await withTestDb();
+    await clearTestDb(db);
+    // clearTestDb drops the collections, and their indexes go with them. The
+    // unique { userId, id } index is part of what this route leans on, so every
+    // test has to start with the indexes production starts with. Without this,
+    // a stale upload inserts a second document and a findOne still finds the
+    // right one, which is how these tests once passed for the wrong reason.
+    await connect(db);
   });
   afterAll(closeTestDb);
 
@@ -126,7 +134,50 @@ describe('sync', () => {
       token,
     );
 
-    const stored = await collections(db).plans.findOne({ id: plan.id });
-    expect(stored?.title).toBe('new');
+    const stored = await collections(db).plans.find({ userId: 'me', id: plan.id }).toArray();
+    expect(stored.map((row) => row.title)).toEqual(['new']);
+  });
+
+  it('keeps the newer copy when two uploads of the same row overlap', async () => {
+    const db = await withTestDb();
+    const store = collections(db).plans;
+    const ids = Array.from({ length: 25 }, (_, index) => `race-${index}`);
+    const row = (id: string, title: string, updatedAt: string) => ({ ...plan, id, title, updatedAt });
+
+    await Promise.all(ids.map((id) => saveRow(store, 'me', row(id, 'stored', '2026-09-08T09:00:00.000Z'), 'T0')));
+
+    // Twenty-five rows rather than one, and a warm connection pool. Both are
+    // needed to make this a race at all: the driver's pool starts with a single
+    // socket, so a second caller waits for one to be built and by then the
+    // first has already written — with one row and a cold pool, a deliberately
+    // broken write passed five runs out of five.
+    await Promise.all(Array.from({ length: 8 }, () => store.findOne({ userId: 'warm-up' })));
+
+    // Started in the same tick: the phone and the laptop flushing the same
+    // block at the same moment. Tested on the write rather than through two
+    // HTTP requests, which never reliably meet inside the handler.
+    await Promise.all(
+      ids.flatMap((id) => [
+        saveRow(store, 'me', row(id, 'newer', '2026-09-08T11:00:00.000Z'), 'T1'),
+        saveRow(store, 'me', row(id, 'older-but-slow', '2026-09-08T10:00:00.000Z'), 'T2'),
+      ]),
+    );
+
+    const stored = await store.find({ userId: 'me', id: { $in: ids } }).toArray();
+    expect(stored).toHaveLength(ids.length);
+    // Named, not counted: a failure says which rows kept the older copy.
+    const keptTheOlderCopy = stored.filter((saved) => saved.title !== 'newer').map((saved) => saved.id);
+    expect(keptTheOlderCopy).toEqual([]);
+  });
+
+  it('refuses to insert a second copy when the stored row is the newer one', async () => {
+    const db = await withTestDb();
+    const store = collections(db).plans;
+
+    await saveRow(store, 'me', { ...plan, updatedAt: '2026-09-08T11:00:00.000Z' }, 'T0');
+    await saveRow(store, 'me', { ...plan, title: 'stale', updatedAt: '2026-09-08T08:00:00.000Z' }, 'T1');
+
+    const stored = await store.find({ userId: 'me', id: plan.id }).toArray();
+    expect(stored.map((saved) => saved.title)).toEqual(['gym']);
   });
 });
