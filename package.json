@@ -15,7 +15,6 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.7.0",
     "mongodb": "^7.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

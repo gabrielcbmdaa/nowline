@@ -45,8 +45,11 @@ if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js
     const { url, dbName, port } = readConfig();
     openDatabase(url, dbName)
       .then((db) => {
-        createApp(db).listen(port, () => {
-          console.log(`nowline server listening on ${port}`);
+        // 127.0.0.1 on purpose, as the spec's deployment section requires:
+        // nginx is the only thing that talks to the world, and a process that
+        // binds every interface is reachable the moment a firewall rule moves.
+        createApp(db).listen(port, '127.0.0.1', () => {
+          console.log(`nowline server listening on 127.0.0.1:${port}`);
         });
       })
       .catch((error: unknown) => {
