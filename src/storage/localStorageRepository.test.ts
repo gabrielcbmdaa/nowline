@@ -731,6 +731,33 @@ describe('LocalStorageRepository', () => {
     }
   });
 
+  it('starts with no token and no cursor', async () => {
+    const repo = new LocalStorageRepository();
+    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null });
+  });
+
+  it('keeps the token and the cursor across instances', async () => {
+    await new LocalStorageRepository().writeSyncState({ token: 'abc', cursor: '2026-09-09T20:00:00.000Z' });
+
+    const later = new LocalStorageRepository();
+    expect(await later.readSyncState()).toEqual({ token: 'abc', cursor: '2026-09-09T20:00:00.000Z' });
+  });
+
+  it('treats a damaged sync state as never having synced', async () => {
+    localStorage.setItem('nowline.sync.v1', 'not json at all');
+
+    // Forgetting the cursor costs one full download. Trusting a damaged one
+    // costs rows that are never asked for again.
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({ token: null, cursor: null });
+  });
+
+  it('keeps the token when only the cursor is damaged', async () => {
+    localStorage.setItem('nowline.sync.v1', JSON.stringify({ token: 'abc', cursor: 42 }));
+
+    // Losing the token means the owner types a password again for nothing.
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({ token: 'abc', cursor: null });
+  });
+
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.savePlan(plan);

@@ -1,5 +1,5 @@
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
-import { LocalStorageRepository } from './localStorageRepository';
+import { LocalStorageRepository, type SyncState } from './localStorageRepository';
 
 /**
  * The seam a future server slots into. Everything above this interface is
@@ -22,6 +22,9 @@ export interface BlockRepository {
   listOverrides(fromDate?: string, toDate?: string): Promise<BlockOverride[]>;
   saveOverride(override: BlockOverride): Promise<void>;
   deleteOverride(id: string): Promise<void>;
+
+  readSyncState(): Promise<SyncState>;
+  writeSyncState(next: SyncState): Promise<void>;
 }
 
 export const repository: BlockRepository = new LocalStorageRepository();
