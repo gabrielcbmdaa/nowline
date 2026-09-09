@@ -242,6 +242,24 @@ describe('sync', () => {
     expect(keptTheOlderCopy).toEqual([]);
   });
 
+  it('names the rows it refused instead of answering a plain 200', async () => {
+    const db = await withTestDb();
+    await connect(db);
+    const token = await issueToken(db, 'me');
+
+    const { updatedAt, ...withoutStamp } = plan;
+    const response = await post(
+      db,
+      '/api/sync',
+      { since: null, changes: { ...empty(), plans: [{ ...withoutStamp, id: 'no-stamp' }] } },
+      token,
+    );
+
+    expect(response.status).toBe(200);
+    expect((response.body as { rejected: string[] }).rejected).toEqual(['no-stamp']);
+    expect(await collections(db).plans.countDocuments({ id: 'no-stamp' })).toBe(0);
+  });
+
   it('refuses to insert a second copy when the stored row is the newer one', async () => {
     const db = await withTestDb();
     const store = collections(db).plans;

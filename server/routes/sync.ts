@@ -66,12 +66,21 @@ export function syncRoute(db: Db): Router {
     const since = typeof request.body?.since === 'string' ? request.body.since : null;
     const incoming = request.body?.changes ?? {};
 
+    // A row the server dropped has to be named. The client empties its pending
+    // queue when it gets a correct answer, so a silent skip inside a 200 is an
+    // id that leaves the queue and never reaches the server.
+    const rejected: string[] = [];
+
     for (const kind of KINDS) {
       const arriving: Row[] = Array.isArray(incoming[kind]) ? incoming[kind] : [];
       const store = collections(db)[kind];
 
       for (const row of arriving) {
-        if (typeof row?.id !== 'string' || typeof row?.updatedAt !== 'string') continue;
+        if (typeof row?.updatedAt !== 'string') {
+          if (typeof row?.id === 'string') rejected.push(row.id);
+          continue;
+        }
+        if (typeof row?.id !== 'string') continue;
 
         // Stamped when the row is written, which is what the spec says: the
         // server stamps a row "when it saves it". A stamp taken at the top of
@@ -99,7 +108,7 @@ export function syncRoute(db: Db): Router {
       }
     }
 
-    response.json({ serverTime: cursor, changes });
+    response.json({ serverTime: cursor, changes, rejected });
   });
 
   return router;
