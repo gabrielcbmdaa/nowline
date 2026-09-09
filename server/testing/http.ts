@@ -17,7 +17,14 @@ export async function call(
   const server = app.listen(0);
   try {
     const { port } = server.address() as AddressInfo;
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    // `connection: close` on purpose: this helper opens a server per call and closes it
+    // again, and node's fetch pools sockets by default. A pooled socket outliving its
+    // server can deliver a later request to whatever grabbed that port next. A full
+    // suite once failed here with a 403 that nothing in this repository returns.
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      connection: 'close',
+    };
     if (init?.token) headers.authorization = `Bearer ${init.token}`;
 
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
