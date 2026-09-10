@@ -14,6 +14,13 @@ export type SyncOutcome =
 
 export type FirstSyncDecision = 'upload-mine' | 'take-the-cloud' | 'ask-the-owner';
 
+export type FirstSyncLook =
+  | { kind: 'ask'; local: number; remote: number }
+  | { kind: 'settled'; choice: FirstSyncDecision }
+  | { kind: 'offline' }
+  | { kind: 'unauthorized' }
+  | { kind: 'refused'; status: number | null };
+
 /**
  * What a device that has never synced should do, by what it finds on each
  * side. Ids are generated per device, so a block called "Gym" made on the
@@ -95,4 +102,36 @@ export async function syncOnce(
   const stillOwed = left.projects.length + left.plans.length + left.overrides.length;
 
   return { kind: 'done', downloaded, stillOwed };
+}
+
+/**
+ * What a device that has never synced finds, without changing anything.
+ *
+ * Uploads nothing and writes nothing down: the answer to "both sides have
+ * rows" is a screen, and a screen that has not been shown yet cannot be
+ * overruled by a round that a timer started.
+ */
+export async function inspectFirstSync(
+  deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
+): Promise<FirstSyncLook> {
+  const send = deps.send ?? apiClient.sync;
+  const repo = deps.repo ?? liveRepository;
+
+  const { token } = await repo.readSyncState();
+  if (token === null) return { kind: 'unauthorized' };
+
+  const nothing = { projects: [], plans: [], overrides: [] };
+  const reply = await send(token, null, nothing);
+  if (isFailure(reply)) {
+    if (reply.kind === 'offline') return { kind: 'offline' };
+    if (reply.kind === 'unauthorized') return { kind: 'unauthorized' };
+    return { kind: 'refused', status: reply.status };
+  }
+
+  const remote =
+    reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
+  const local = await repo.countLocalRows();
+
+  const choice = firstSyncDecision(local, remote);
+  return choice === 'ask-the-owner' ? { kind: 'ask', local, remote } : { kind: 'settled', choice };
 }

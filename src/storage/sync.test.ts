@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockPlan } from '../domain/types';
 import { LocalStorageRepository } from './localStorageRepository';
-import { firstSyncDecision, syncOnce } from './sync';
+import { firstSyncDecision, inspectFirstSync, syncOnce } from './sync';
 
 const plan: BlockPlan = {
   id: 'p1',
@@ -41,6 +41,56 @@ describe('firstSyncDecision', () => {
 
   it('uploads when neither side has anything, rather than asking about nothing', () => {
     expect(firstSyncDecision(0, 0)).toBe('upload-mine');
+  });
+});
+
+describe('inspectFirstSync', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('asks when both sides hold rows, and changes nothing', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [{ ...plan, id: 'theirs' }], overrides: [] },
+      rejected: [],
+    });
+
+    const look = await inspectFirstSync({ send, repo });
+
+    expect(look).toEqual({ kind: 'ask', local: 1, remote: 1 });
+    // Looking is not merging: nothing downloaded may be written, and nothing
+    // local may be sent, until the owner has chosen.
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+    expect(send.mock.calls[0][2]).toEqual({ projects: [], plans: [], overrides: [] });
+  });
+
+  it('settles by itself when the cloud is empty', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [], overrides: [] },
+      rejected: [],
+    });
+
+    expect(await inspectFirstSync({ send, repo })).toEqual({ kind: 'settled', choice: 'upload-mine' });
+  });
+
+  it('passes a network failure through instead of guessing', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null });
+
+    // Guessing "the cloud is empty" from silence is how a device uploads over
+    // a full account.
+    expect(await inspectFirstSync({ send, repo })).toEqual({ kind: 'offline' });
   });
 });
 
