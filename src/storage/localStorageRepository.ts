@@ -103,20 +103,25 @@ export class LocalStorageRepository implements BlockRepository {
   }
 
   /**
-   * Never hand the same row two identical stamps. A shared `updatedAt` is a lost
-   * edit: the confirmation of the first upload cannot tell the second version
-   * from the one it sent, and drops it from the queue. Measured on this project:
-   * 1000 of 1000 consecutive `new Date().toISOString()` pairs are identical.
+   * The only place in this class that writes an `updatedAt`.
    *
-   * Compared against this row's own previous stamp rather than against a counter
-   * kept per process: `repository` is one instance for the whole app, and a
-   * counter on it leaks from one caller to the next.
+   * Every row that changes gets a stamp strictly newer than its own previous
+   * one. Two writes of a row inside one millisecond used to share a stamp, and
+   * a shared stamp is a change that never travels: the confirmation of the
+   * first upload cannot tell the second version from the one it sent. That bit
+   * the tombstones first, because deleting used to write `updatedAt` on its
+   * own, without ever looking at what the row already carried.
    */
-  private stamp<T extends { id: string; updatedAt: string }>(row: T, existing: readonly T[]): T {
+  private touch<T extends { id: string; updatedAt: string }>(
+    row: T,
+    existing: readonly T[],
+    changes: Partial<T> = {},
+  ): T {
     const now = this.now().toISOString();
     const previous = existing.find((stored) => stored.id === row.id)?.updatedAt;
     return {
       ...row,
+      ...changes,
       updatedAt: previous !== undefined && now <= previous ? nextInstantAfter(previous) : now,
     };
   }
@@ -132,16 +137,16 @@ export class LocalStorageRepository implements BlockRepository {
     // The other way around persists a change the server never hears about.
     this.markPending('projects', project.id);
     const rows = this.read<Project>(PROJECTS_KEY);
-    this.write(PROJECTS_KEY, upsert(rows, this.stamp(project, rows)));
+    this.write(PROJECTS_KEY, upsert(rows, this.touch(project, rows)));
   }
 
   async deleteProject(id: string): Promise<void> {
     this.ensureMigrated();
-    const at = this.now().toISOString();
 
     // Blocks outlive their project; they simply lose their colour. Each one is a
     // row that changed, so each one needs its own new updatedAt: without it the
     // other device would hand the colour straight back.
+    const projects = this.read<Project>(PROJECTS_KEY);
     const plans = this.read<BlockPlan>(PLANS_KEY);
     this.markPending('projects', id);
     for (const row of plans) {
@@ -150,14 +155,16 @@ export class LocalStorageRepository implements BlockRepository {
 
     this.write(
       PROJECTS_KEY,
-      this.read<Project>(PROJECTS_KEY).map((row) =>
-        row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
+      projects.map((row) =>
+        row.id === id
+          ? this.touch(row, projects, { deletedAt: this.now().toISOString() } as Partial<Project>)
+          : row,
       ),
     );
     this.write(
       PLANS_KEY,
       plans.map((row) =>
-        row.projectId === id ? { ...row, projectId: null, updatedAt: at } : row,
+        row.projectId === id ? this.touch(row, plans, { projectId: null }) : row,
       ),
     );
   }
@@ -171,19 +178,21 @@ export class LocalStorageRepository implements BlockRepository {
     this.ensureMigrated();
     this.markPending('plans', plan.id);
     const rows = this.read<BlockPlan>(PLANS_KEY);
-    this.write(PLANS_KEY, upsert(rows, this.stamp(plan, rows)));
+    this.write(PLANS_KEY, upsert(rows, this.touch(plan, rows)));
   }
 
   async deletePlan(id: string): Promise<void> {
     this.ensureMigrated();
-    const at = this.now().toISOString();
 
     this.markPending('plans', id);
 
+    const rows = this.read<BlockPlan>(PLANS_KEY);
     this.write(
       PLANS_KEY,
-      this.read<BlockPlan>(PLANS_KEY).map((row) =>
-        row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
+      rows.map((row) =>
+        row.id === id
+          ? this.touch(row, rows, { deletedAt: this.now().toISOString() } as Partial<BlockPlan>)
+          : row,
       ),
     );
     // An override carries no tombstone of its own: it only exists hanging off a
@@ -216,7 +225,7 @@ export class LocalStorageRepository implements BlockRepository {
     this.ensureMigrated();
     this.markPending('overrides', override.id);
     const rows = this.read<BlockOverride>(OVERRIDES_KEY);
-    this.write(OVERRIDES_KEY, upsert(rows, this.stamp(override, rows)));
+    this.write(OVERRIDES_KEY, upsert(rows, this.touch(override, rows)));
   }
 
   async deleteOverride(id: string): Promise<void> {

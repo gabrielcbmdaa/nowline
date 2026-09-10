@@ -224,6 +224,57 @@ describe('LocalStorageRepository', () => {
     expect(stored.updatedAt).toBe(FROZEN);
   });
 
+  it('does not give a tombstone the same stamp as the row it buries', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.savePlan({ ...plan, id: 'p1' });
+    const alive = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    await repo.deletePlan('p1');
+    const buried = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    // Sharing a stamp means the confirmation of the live version also clears
+    // the tombstone from the queue: the deletion never travels and the block
+    // comes back from the other device.
+    expect(buried > alive).toBe(true);
+    // And the tombstone was actually written: a stamp that moved on a row that
+    // was never buried would satisfy the line above and bury nothing.
+    const row = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0];
+    expect(row.deletedAt).not.toBeNull();
+  });
+
+  it('does not give a project tombstone the same stamp as the project it buries', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.saveProject({ ...project, id: 'health' });
+    const alive = JSON.parse(localStorage.getItem('nowline.projects.v2') ?? '[]')[0].updatedAt;
+
+    await repo.deleteProject('health');
+    const row = JSON.parse(localStorage.getItem('nowline.projects.v2') ?? '[]')[0];
+
+    // The project's own tombstone is a third write this changed, and the plans
+    // that lose their colour do not cover it: reverting this one alone left the
+    // whole file green.
+    expect(row.updatedAt > alive).toBe(true);
+    expect(row.deletedAt).not.toBeNull();
+  });
+
+  it('does not stamp a plan that lost its colour behind its own last change', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.saveProject({ ...project, id: 'health' });
+    await repo.savePlan({ ...plan, id: 'p1', projectId: 'health' });
+    await repo.savePlan({ ...plan, id: 'p1', projectId: 'health', title: 'edited' });
+    const beforeDelete = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    await repo.deleteProject('health');
+    const afterDelete = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    // A stamp behind the row's own last change is a change the other device
+    // will overrule: it hands the colour straight back.
+    expect(afterDelete > beforeDelete).toBe(true);
+    // And the colour is actually gone: a stamp that moved while the plan kept
+    // its project would satisfy the line above and change nothing that matters.
+    expect(JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].projectId).toBeNull();
+  });
+
   it('never stamps two saves with the same instant', async () => {
     // Two saves inside one millisecond used to share an updatedAt, and a shared
     // stamp is a lost edit: the confirmation of the first save sees the second
