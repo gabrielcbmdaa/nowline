@@ -7,7 +7,7 @@ const reply = (status: number, body: unknown) =>
     status,
     ok: status >= 200 && status < 300,
     json: async () => body,
-  } as unknown as Response);
+  });
 
 describe('apiClient', () => {
   afterEach(() => {
@@ -66,7 +66,7 @@ describe('apiClient', () => {
         json: async () => {
           throw new SyntaxError('Unexpected token <');
         },
-      } as unknown as Response),
+      }),
     );
 
     // The error page the dev server serves for a malformed body is HTML. A

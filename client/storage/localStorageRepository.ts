@@ -157,7 +157,7 @@ export class LocalStorageRepository implements BlockRepository {
       PROJECTS_KEY,
       projects.map((row) =>
         row.id === id
-          ? this.touch(row, projects, { deletedAt: this.now().toISOString() } as Partial<Project>)
+          ? this.touch(row, projects, { deletedAt: this.now().toISOString() })
           : row,
       ),
     );
@@ -191,7 +191,7 @@ export class LocalStorageRepository implements BlockRepository {
       PLANS_KEY,
       rows.map((row) =>
         row.id === id
-          ? this.touch(row, rows, { deletedAt: this.now().toISOString() } as Partial<BlockPlan>)
+          ? this.touch(row, rows, { deletedAt: this.now().toISOString() })
           : row,
       ),
     );

@@ -929,7 +929,7 @@ describe('LocalStorageRepository', () => {
 
     // What the upload loop sent, read before the request went out.
     const sent = await repo.rowsToUpload(await repo.listPending());
-    const asSent = { id: 'p1', updatedAt: sent.plans[0].updatedAt as string };
+    const asSent = { id: 'p1', updatedAt: sent.plans[0].updatedAt };
 
     // The owner edits while the request is in the air. markPending changes
     // nothing: p1 is already queued.
@@ -949,7 +949,7 @@ describe('LocalStorageRepository', () => {
 
     await repo.clearPendingUnchanged({
       projects: [],
-      plans: [{ id: 'p1', updatedAt: sent.plans[0].updatedAt as string }],
+      plans: [{ id: 'p1', updatedAt: sent.plans[0].updatedAt }],
       overrides: [],
     });
 
