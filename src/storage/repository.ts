@@ -40,6 +40,14 @@ export interface BlockRepository {
   countLocalRows(): Promise<number>;
   /** A copy of everything local, under a key nothing reads. */
   keepDiscardedCopy(stamp: string): Promise<void>;
+  /** Every row this device holds becomes owed: what a device joining for the first time sends. */
+  queueEverything(): Promise<void>;
+  /**
+   * Throw away what is here and keep what arrived. Only the first-sync screen
+   * calls this, and only after `keepDiscardedCopy`; the queue is emptied too,
+   * because nothing local is owed any more.
+   */
+  replaceAllFromServer(changes: SyncChanges): Promise<void>;
 }
 
 export const repository: BlockRepository = new LocalStorageRepository();

@@ -10,7 +10,8 @@ export type SyncOutcome =
   | { kind: 'offline' }
   | { kind: 'unauthorized' }
   | { kind: 'needs-first-sync' }
-  | { kind: 'refused'; status: number | null };
+  | { kind: 'refused'; status: number | null }
+  | { kind: 'undecided' };
 
 export type FirstSyncDecision = 'upload-mine' | 'take-the-cloud' | 'ask-the-owner';
 
@@ -134,4 +135,50 @@ export async function inspectFirstSync(
 
   const choice = firstSyncDecision(local, remote);
   return choice === 'ask-the-owner' ? { kind: 'ask', local, remote } : { kind: 'settled', choice };
+}
+
+export async function settleFirstSync(
+  choice: FirstSyncDecision,
+  deps: { send?: typeof apiClient.sync; repo?: BlockRepository; today?: () => string } = {},
+): Promise<SyncOutcome> {
+  const send = deps.send ?? apiClient.sync;
+  const repo = deps.repo ?? liveRepository;
+  const today = deps.today ?? (() => new Date().toISOString().slice(0, 10));
+
+  // Not a choice that can be carried out: it is the absence of one. Letting it
+  // fall through to the upload path is the blind merge this whole pair of
+  // functions exists to prevent, reached by passing the wrong argument.
+  if (choice === 'ask-the-owner') return { kind: 'undecided' };
+
+  const state = await repo.readSyncState();
+  if (state.token === null) return { kind: 'unauthorized' };
+
+  if (choice === 'take-the-cloud') {
+    const reply = await send(state.token, null, { projects: [], plans: [], overrides: [] });
+    if (isFailure(reply)) {
+      return reply.kind === 'offline'
+        ? { kind: 'offline' }
+        : reply.kind === 'unauthorized'
+          ? { kind: 'unauthorized' }
+          : { kind: 'refused', status: reply.status };
+    }
+    // The copy first, always, and only then the replacement.
+    await repo.keepDiscardedCopy(today());
+    await repo.replaceAllFromServer(reply.changes);
+    await repo.writeSyncState({ token: state.token, cursor: reply.serverTime, joined: true });
+    return { kind: 'done', downloaded: 0, stillOwed: 0 };
+  }
+
+  await repo.queueEverything();
+  // Joined only once a round has actually gone through: marking it before
+  // would let the next timer round merge blind.
+  await repo.writeSyncState({ ...state, joined: true });
+  const outcome = await syncOnce({ send, repo });
+  if (outcome.kind !== 'done') {
+    // Only the flag. Whether the token is still any good was decided by the
+    // round, one layer down, and it is not this function's to overrule.
+    const after = await repo.readSyncState();
+    await repo.writeSyncState({ ...after, joined: false });
+  }
+  return outcome;
 }

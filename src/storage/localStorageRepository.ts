@@ -466,6 +466,25 @@ export class LocalStorageRepository implements BlockRepository {
     );
   }
 
+  /** Every row this device holds becomes owed: what a device joining for the first time sends. */
+  async queueEverything(): Promise<void> {
+    this.ensureMigrated();
+    localStorage.setItem(PENDING_KEY, JSON.stringify(this.everythingPending()));
+  }
+
+  /**
+   * Throw away what is here and keep what arrived. Only the first-sync screen
+   * calls this, and only after `keepDiscardedCopy`; the queue is emptied too,
+   * because nothing local is owed any more.
+   */
+  async replaceAllFromServer(changes: SyncChanges): Promise<void> {
+    this.ensureMigrated();
+    this.write(PROJECTS_KEY, changes.projects);
+    this.write(PLANS_KEY, changes.plans);
+    this.write(OVERRIDES_KEY, changes.overrides);
+    localStorage.setItem(PENDING_KEY, JSON.stringify(nothingPending()));
+  }
+
   private read<T>(key: string): T[] {
     try {
       const raw = localStorage.getItem(key);

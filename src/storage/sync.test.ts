@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockPlan } from '../domain/types';
 import { LocalStorageRepository } from './localStorageRepository';
-import { firstSyncDecision, inspectFirstSync, syncOnce } from './sync';
+import { firstSyncDecision, inspectFirstSync, settleFirstSync, syncOnce } from './sync';
 
 const plan: BlockPlan = {
   id: 'p1',
@@ -91,6 +91,89 @@ describe('inspectFirstSync', () => {
     // Guessing "the cloud is empty" from silence is how a device uploads over
     // a full account.
     expect(await inspectFirstSync({ send, repo })).toEqual({ kind: 'offline' });
+  });
+});
+
+describe('settleFirstSync', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('uploads everything this device holds when the owner keeps his own', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+    await repo.clearPending({ projects: [], plans: ['mine'], overrides: [] });
+
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [],
+    });
+
+    await settleFirstSync('upload-mine', { send, repo });
+
+    // Not just what is queued: a device joining for the first time owes the
+    // server everything it has, including rows saved before any queue existed.
+    expect(send.mock.calls[0][2].plans.map((row: { id: string }) => row.id)).toEqual(['mine']);
+    expect((await repo.readSyncState()).joined).toBe(true);
+  });
+
+  it('keeps a copy of the local rows before taking the cloud', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [{ ...plan, id: 'theirs' }], overrides: [] },
+      rejected: [],
+    });
+
+    await settleFirstSync('take-the-cloud', { send, repo, today: () => '2026-09-09' });
+
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['theirs']);
+    // Nothing in this app destroys the owner's data on one choice: his real
+    // data lives on a phone, with no console to dig it back out of.
+    const kept = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-09') ?? 'null');
+    expect(kept.plans.map((row: { id: string }) => row.id)).toEqual(['mine']);
+    expect((await repo.listPending()).plans).toEqual([]);
+  });
+
+  it('does not mark the device joined when the round failed', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null });
+
+    await settleFirstSync('upload-mine', { send, repo });
+
+    // Marking it joined here would let the next timer round merge blind, which
+    // is the exact thing this pair of tasks exists to prevent.
+    expect((await repo.readSyncState()).joined).toBe(false);
+  });
+
+  it('refuses to act on "ask the owner", which is not a decision', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+    const send = vi.fn();
+
+    expect(await settleFirstSync('ask-the-owner', { send, repo })).toEqual({ kind: 'undecided' });
+    expect(send).not.toHaveBeenCalled();
+    expect((await repo.readSyncState()).joined).toBe(false);
+  });
+
+  it('does not put back a token the server has just rejected', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'stale', cursor: 'T1', joined: false });
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401 });
+
+    await settleFirstSync('upload-mine', { send, repo });
+
+    const state = await repo.readSyncState();
+    // The round already decided this key is dead. Restoring it means every
+    // later round spends a request being told so again.
+    expect(state.token).toBeNull();
+    // And the question is still unanswered, so the engine must stay shut.
+    expect(state.joined).toBe(false);
   });
 });
 
