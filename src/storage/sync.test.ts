@@ -283,4 +283,21 @@ describe('syncOnce', () => {
     // The cursor stays: the rows already downloaded are still downloaded.
     expect(await repo.readSyncState()).toEqual({ token: null, cursor: 'T1', joined: true });
   });
+
+  it('confirms against the stamps it sent, not the ones it finds afterwards', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.savePlan({ ...plan, id: 'p1', title: 'version A' });
+
+    // The edit lands while the request is in the air, which is the only moment
+    // this ordering matters.
+    const send = vi.fn().mockImplementation(async () => {
+      await repo.savePlan({ ...plan, id: 'p1', title: 'version B' });
+      return { serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
+    });
+
+    await syncOnce({ send, repo });
+
+    expect((await repo.listPending()).plans).toEqual(['p1']);
+  });
 });

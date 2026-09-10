@@ -113,6 +113,23 @@ describe('apiClient', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('gives up after fifteen seconds, not at some other time', async () => {
+    const fetcher = reply(200, { token: 'abc' });
+    vi.stubGlobal('fetch', fetcher);
+    const timeouts: number[] = [];
+    const realTimeout = AbortSignal.timeout;
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      timeouts.push(ms);
+      return realTimeout.call(AbortSignal, ms);
+    });
+
+    await login('gabriel', 'a-long-password');
+
+    // A number, not "some signal": a deadline of one millisecond and a deadline
+    // that never fires both satisfy "there is a signal".
+    expect(timeouts).toEqual([15_000]);
+  });
+
   it('reports a round it abandoned as offline, like any other silence', async () => {
     vi.stubGlobal(
       'fetch',

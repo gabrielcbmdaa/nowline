@@ -196,4 +196,45 @@ describe('the four moments a round happens', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(round).not.toHaveBeenCalled();
   });
+
+  it('runs a round the moment the app starts', async () => {
+    const stop = startSyncing();
+    await vi.waitFor(() => expect(round).toHaveBeenCalledTimes(1));
+    stop();
+  });
+
+  it('runs a round when the tab comes back to the front', async () => {
+    const stop = startSyncing();
+
+    // Let the round that starting fires finish first. One round runs at a time,
+    // so firing the event while that one is still in the air would be answered
+    // with the same promise and prove nothing about the listener.
+    await vi.waitFor(() => expect(round).toHaveBeenCalledTimes(1));
+    await syncNow();
+    round.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await vi.waitFor(() => expect(round).toHaveBeenCalledTimes(1));
+    stop();
+  });
+
+  it('does not run a round when the tab is being hidden', async () => {
+    const stop = startSyncing();
+    await vi.waitFor(() => expect(round).toHaveBeenCalledTimes(1));
+    await syncNow();
+
+    // Fake timers from here, like the siblings in this block that advance: the
+    // beforeEach puts real ones back, and advancing those does nothing.
+    vi.useFakeTimers();
+    round.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(round).not.toHaveBeenCalled();
+    stop();
+  });
 });

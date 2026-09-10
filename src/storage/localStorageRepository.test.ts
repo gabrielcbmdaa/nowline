@@ -986,6 +986,10 @@ describe('LocalStorageRepository', () => {
     expect(saved.projects[0].id).toBe('pr1');
     expect(saved.plans[0].id).toBe('p1');
     expect(saved.overrides[0].id).toBe('o-2026-09-03');
+
+    // The name says "before anything is discarded": the live rows have to still
+    // be there when the copy is taken, or the copy is all that is left.
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['p1']);
   });
 
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
