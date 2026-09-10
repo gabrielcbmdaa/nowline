@@ -164,7 +164,12 @@ export async function stopRunningTimer(now: Date = new Date()): Promise<void> {
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** One round at a time. A second caller waits for the one in the air. */
+/**
+ * A wake-up that arrives while a round is running joins it instead of asking
+ * for another. Not a lock — the engine has its own, one layer down, covering
+ * all three ways in. This is about not queueing five rounds because five
+ * things woke up during one slow one.
+ */
 let roundInFlight: Promise<void> | null = null;
 
 /** After a round that found no network, try again in half a minute, not in five. */
