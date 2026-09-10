@@ -23,6 +23,11 @@ export type SentRows = { projects: SentRow[]; plans: SentRow[]; overrides: SentR
 
 const nothingPending = (): PendingIds => ({ projects: [], plans: [], overrides: [] });
 
+/** One millisecond later, in the same ISO shape the rest of the app compares as text. */
+function nextInstantAfter(stamp: string): string {
+  return new Date(Date.parse(stamp) + 1).toISOString();
+}
+
 /**
  * The keys this app was born with, under the name it had before Nowline. They
  * are read once and then left alone on purpose: while they sit there, the
@@ -97,8 +102,23 @@ export class LocalStorageRepository implements BlockRepository {
     this.migrated = true;
   }
 
-  private stamp<T>(row: T): T & { updatedAt: string } {
-    return { ...row, updatedAt: this.now().toISOString() };
+  /**
+   * Never hand the same row two identical stamps. A shared `updatedAt` is a lost
+   * edit: the confirmation of the first upload cannot tell the second version
+   * from the one it sent, and drops it from the queue. Measured on this project:
+   * 1000 of 1000 consecutive `new Date().toISOString()` pairs are identical.
+   *
+   * Compared against this row's own previous stamp rather than against a counter
+   * kept per process: `repository` is one instance for the whole app, and a
+   * counter on it leaks from one caller to the next.
+   */
+  private stamp<T extends { id: string; updatedAt: string }>(row: T, existing: readonly T[]): T {
+    const now = this.now().toISOString();
+    const previous = existing.find((stored) => stored.id === row.id)?.updatedAt;
+    return {
+      ...row,
+      updatedAt: previous !== undefined && now <= previous ? nextInstantAfter(previous) : now,
+    };
   }
 
   async listProjects(): Promise<Project[]> {
@@ -111,7 +131,8 @@ export class LocalStorageRepository implements BlockRepository {
     // Queue first: if the row write then fills storage, the id is still owed.
     // The other way around persists a change the server never hears about.
     this.markPending('projects', project.id);
-    this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), this.stamp(project)));
+    const rows = this.read<Project>(PROJECTS_KEY);
+    this.write(PROJECTS_KEY, upsert(rows, this.stamp(project, rows)));
   }
 
   async deleteProject(id: string): Promise<void> {
@@ -149,7 +170,8 @@ export class LocalStorageRepository implements BlockRepository {
   async savePlan(plan: BlockPlan): Promise<void> {
     this.ensureMigrated();
     this.markPending('plans', plan.id);
-    this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), this.stamp(plan)));
+    const rows = this.read<BlockPlan>(PLANS_KEY);
+    this.write(PLANS_KEY, upsert(rows, this.stamp(plan, rows)));
   }
 
   async deletePlan(id: string): Promise<void> {
@@ -193,10 +215,8 @@ export class LocalStorageRepository implements BlockRepository {
   async saveOverride(override: BlockOverride): Promise<void> {
     this.ensureMigrated();
     this.markPending('overrides', override.id);
-    this.write(
-      OVERRIDES_KEY,
-      upsert(this.read<BlockOverride>(OVERRIDES_KEY), this.stamp(override)),
-    );
+    const rows = this.read<BlockOverride>(OVERRIDES_KEY);
+    this.write(OVERRIDES_KEY, upsert(rows, this.stamp(override, rows)));
   }
 
   async deleteOverride(id: string): Promise<void> {

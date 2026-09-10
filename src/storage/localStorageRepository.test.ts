@@ -224,6 +224,54 @@ describe('LocalStorageRepository', () => {
     expect(stored.updatedAt).toBe(FROZEN);
   });
 
+  it('never stamps two saves with the same instant', async () => {
+    // Two saves inside one millisecond used to share an updatedAt, and a shared
+    // stamp is a lost edit: the confirmation of the first save sees the second
+    // one as unchanged and drops it from the queue.
+    const repo = new LocalStorageRepository(frozenClock);
+
+    await repo.savePlan({ ...plan, id: 'p1', title: 'first' });
+    const first = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    await repo.savePlan({ ...plan, id: 'p1', title: 'second' });
+    const second = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    expect(second > first).toBe(true);
+  });
+
+  it('compares a row against its own previous stamp, not against its neighbour', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+
+    // Neither row has a previous version, so neither is nudged: two different
+    // rows sharing an instant is harmless, because the comparison that matters
+    // is per row. Looking the previous stamp up by position instead of by id
+    // would push the second one a millisecond into the future for no reason,
+    // and stamps are what decide who wins a merge.
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(stored.map((row: { id: string; updatedAt: string }) => [row.id, row.updatedAt])).toEqual([
+      ['p1', FROZEN],
+      ['p2', FROZEN],
+    ]);
+  });
+
+  it('still uses the real instant when the clock has moved on', async () => {
+    // The nudge is a floor, not an offset: a stamp must not drift ahead of the
+    // clock, or a row from this device outranks a genuinely later one elsewhere.
+    let tick = 0;
+    const movingClock = () => new Date(Date.parse(FROZEN) + tick * 60_000);
+    const repo = new LocalStorageRepository(movingClock);
+
+    await repo.savePlan({ ...plan, id: 'p1' });
+    tick = 5;
+    await repo.savePlan({ ...plan, id: 'p1' });
+
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0];
+    expect(stored.updatedAt).toBe(new Date(Date.parse(FROZEN) + 5 * 60_000).toISOString());
+  });
+
   it('migrates the v1 keys into the v2 keys and leaves v1 untouched', async () => {
     const legacyProject = {
       id: 'health',
