@@ -14,10 +14,11 @@ pnpm test                                 # vitest run, the whole suite
 pnpm test client/domain/recurrence.test.ts   # one file
 pnpm test -t 'name of the test'           # one test by name
 pnpm test:watch
-pnpm build                                # tsc --noEmit, then vite build
+pnpm lint                                 # eslint, on its own
+pnpm build                                # lint, then both tsc, then vite build
 ```
 
-There is no linter. `tsc --noEmit` with `strict`, `noUnusedLocals` and `noUnusedParameters` is the only static gate, and it only runs as part of `pnpm build` — run it before claiming a change compiles. CI runs `pnpm test` and `pnpm build` on every push to `main`, and a failure there stops the deploy before the server is touched; that is a second gate, not a reason to skip the first.
+`pnpm build` is the static gate and runs three things in order: `eslint .`, then `tsc --noEmit` for the client, then the same for the server. The linter is `typescript-eslint` on `strictTypeChecked`, added on 2026-09-10 for the one rule a compiler cannot give — a promise nobody waits for. Three of its rules are off in `eslint.config.js`, each with the reason written beside it; the biggest is `require-await`, because every repository method here is `async` although `localStorage` is not, which is the seam described below and not an accident — run it before claiming a change compiles. CI runs `pnpm test` and `pnpm build` on every push to `main`, and a failure there stops the deploy before the server is touched; that is a second gate, not a reason to skip the first.
 
 `vite.config.ts` pins `TZ=Europe/Madrid` for the test process, because the developer's own zone (La Paz) has not changed its clocks since 1932 and daylight-saving tests would pass there by proving nothing. Never override it.
 

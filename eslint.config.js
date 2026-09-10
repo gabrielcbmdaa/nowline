@@ -15,7 +15,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
  */
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'docs/**', '.superpowers/**'],
+    ignores: ['dist/**', 'node_modules/**', 'docs/**', '.superpowers/**', 'eslint.config.js', 'vite.config.ts'],
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -23,11 +23,12 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         // Both halves of the repository, each with its own tsconfig: the client
-        // one loads the DOM library, the server one does not.
-        // `projectService` instead of a list of tsconfigs: it also covers the
-        // files that belong to no project — `vite.config.ts`, this file — which
-        // a list rejects outright.
-        projectService: true,
+        // one loads the DOM library, the server one does not. A list, not
+        // `projectService`: the service discovers `tsconfig.json` but not
+        // `tsconfig.server.json`, so every server file was a parse error.
+        // This file and `vite.config.ts` are ignored: the former is plain JS,
+        // the latter needs Vitest types the client tsconfig deliberately omits.
+        project: ['./tsconfig.json', './tsconfig.server.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -72,8 +73,15 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
+      // Destructuring to drop a field leaves a binding nothing reads.
+      '@typescript-eslint/no-unused-vars': ['error', { varsIgnorePattern: '^_' }],
+      // `expect(crypto.randomUUID)` and `vi.spyOn(Storage.prototype, 'setItem')`
+      // pass method references on purpose; rebinding them would change nothing
+      // and the alternative is noise in every spy and property assertion.
+      '@typescript-eslint/unbound-method': 'off',
     },
   },
 );

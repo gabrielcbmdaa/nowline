@@ -108,14 +108,18 @@ export function runningHours(override: BlockOverride, now: Date): number {
  *
  * Returns only the rows that changed, so the caller knows exactly what to save.
  */
+type RunningOverride = BlockOverride & { actualStart: string };
+
+function isRunningWithStart(override: BlockOverride): override is RunningOverride {
+  return override.status === 'running' && override.actualStart !== null;
+}
+
 export function resolveConcurrentTimers(overrides: BlockOverride[]): BlockOverride[] {
-  const running = overrides.filter(
-    (override) => override.status === 'running' && override.actualStart,
-  );
+  const running = overrides.filter(isRunningWithStart);
   if (running.length < 2) return [];
 
   const winner = running.reduce((latest, candidate) =>
-    candidate.actualStart! > latest.actualStart! ||
+    candidate.actualStart > latest.actualStart ||
     (candidate.actualStart === latest.actualStart && candidate.id > latest.id)
       ? candidate
       : latest,
@@ -123,5 +127,5 @@ export function resolveConcurrentTimers(overrides: BlockOverride[]): BlockOverri
 
   return running
     .filter((override) => override.id !== winner.id)
-    .map((override) => stopTimer(override, new Date(winner.actualStart!)));
+    .map((override) => stopTimer(override, new Date(winner.actualStart)));
 }

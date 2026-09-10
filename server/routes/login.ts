@@ -42,7 +42,9 @@ export function loginRoute(db: Db): Router {
   const router = Router();
 
   router.post('/api/auth/login', async (request, response) => {
-    const { username, password } = request.body ?? {};
+    const body = request.body as { username?: unknown; password?: unknown } | null | undefined;
+    const username = body?.username;
+    const password = body?.password;
     if (typeof username !== 'string' || typeof password !== 'string') {
       response.status(401).json(REFUSED);
       return;

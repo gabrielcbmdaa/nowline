@@ -88,10 +88,8 @@ export class LocalStorageRepository implements BlockRepository {
         to,
         legacy.map((row) => {
           if (to === OVERRIDES_KEY) {
-            const { deletedAt: _tombstone, ...withoutTombstone } = row as {
-              id: string;
-              deletedAt?: unknown;
-            };
+            const withoutTombstone = { ...(row as { id: string; deletedAt?: unknown }) };
+            delete withoutTombstone.deletedAt;
             return { ...withoutTombstone, updatedAt: stampedAt };
           }
           return { deletedAt: null, ...row, updatedAt: stampedAt };
@@ -393,26 +391,26 @@ export class LocalStorageRepository implements BlockRepository {
    */
   async applyFromServer(changes: SyncChanges): Promise<void> {
     this.ensureMigrated();
-    const merge = <T extends { id: string; updatedAt: string }>(
+    const merge = (
       key: string,
       arriving: readonly SyncRow[],
     ): void => {
       if (arriving.length === 0) return;
-      const stored = this.read<T>(key);
+      const stored = this.read<{ id: string; updatedAt: string }>(key);
       const byId = new Map(stored.map((row) => [row.id, row]));
 
       for (const row of arriving) {
         const mine = byId.get(row.id);
         if (mine === undefined || row.updatedAt > mine.updatedAt) {
-          byId.set(row.id, row as unknown as T);
+          byId.set(row.id, row);
         }
       }
       this.write(key, [...byId.values()]);
     };
 
-    merge<Project>(PROJECTS_KEY, changes.projects);
-    merge<BlockPlan>(PLANS_KEY, changes.plans);
-    merge<BlockOverride>(OVERRIDES_KEY, changes.overrides);
+    merge(PROJECTS_KEY, changes.projects);
+    merge(PLANS_KEY, changes.plans);
+    merge(OVERRIDES_KEY, changes.overrides);
   }
 
   /**
@@ -428,12 +426,14 @@ export class LocalStorageRepository implements BlockRepository {
    */
   async clearPendingUnchanged(sent: SentRows): Promise<void> {
     this.ensureMigrated();
-    const stillTheSame = <T extends { id: string; updatedAt: string }>(
+    const stillTheSame = (
       key: string,
       rows: readonly SentRow[],
     ): string[] => {
       if (rows.length === 0) return [];
-      const byId = new Map(this.read<T>(key).map((row) => [row.id, row]));
+      const byId = new Map(
+        this.read<{ id: string; updatedAt: string }>(key).map((row) => [row.id, row]),
+      );
       return rows
         .filter((row) => {
           const stored = byId.get(row.id);
@@ -443,9 +443,9 @@ export class LocalStorageRepository implements BlockRepository {
         .map((row) => row.id);
     };
 
-    this.unmarkPending('projects', stillTheSame<Project>(PROJECTS_KEY, sent.projects));
-    this.unmarkPending('plans', stillTheSame<BlockPlan>(PLANS_KEY, sent.plans));
-    this.unmarkPending('overrides', stillTheSame<BlockOverride>(OVERRIDES_KEY, sent.overrides));
+    this.unmarkPending('projects', stillTheSame(PROJECTS_KEY, sent.projects));
+    this.unmarkPending('plans', stillTheSame(PLANS_KEY, sent.plans));
+    this.unmarkPending('overrides', stillTheSame(OVERRIDES_KEY, sent.overrides));
   }
 
   /** Every row this device holds, tombstones included, counted for the first-sync question. */
@@ -520,7 +520,7 @@ export class LocalStorageRepository implements BlockRepository {
     }
   }
 
-  private write<T>(key: string, rows: T[]): void {
+  private write(key: string, rows: unknown[]): void {
     localStorage.setItem(key, JSON.stringify(rows));
   }
 }

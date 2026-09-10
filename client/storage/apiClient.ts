@@ -38,7 +38,7 @@ function isSyncReply(value: unknown): value is SyncReply {
   );
 }
 
-async function post(path: string, body: unknown, token?: string): Promise<unknown | ApiFailure> {
+async function post(path: string, body: unknown, token?: string): Promise<unknown> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
 

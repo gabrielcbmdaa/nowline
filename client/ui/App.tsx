@@ -40,7 +40,7 @@ export function App() {
    * arrive through.
    */
   function load() {
-    void loadAll().catch((error) => {
+    void loadAll().catch((error: unknown) => {
       reportError('Loading the app failed', error);
       setLoadError(true);
     });

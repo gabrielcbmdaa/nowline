@@ -52,20 +52,19 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
   const background =
     occurrence.status === 'done' ? dimTowardPage(baseColor, DONE_DIM) : baseColor;
 
-  function markPointerStart() {
-    clickFromGesture.current = false;
-  }
-
   function onBodyPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    markPointerStart();
+    clickFromGesture.current = false;
     drag.onBodyPointerDown(event);
   }
 
-  function onHandlePointerDown(edge: 'start' | 'end') {
-    return (event: ReactPointerEvent<HTMLElement>) => {
-      markPointerStart();
-      drag.onHandlePointerDown(edge)(event);
-    };
+  function onStartHandlePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    clickFromGesture.current = false;
+    drag.onHandlePointerDown('start')(event);
+  }
+
+  function onEndHandlePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    clickFromGesture.current = false;
+    drag.onHandlePointerDown('end')(event);
   }
 
   function onPointerUp(event: ReactPointerEvent<HTMLElement>) {
@@ -109,7 +108,7 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
       <span
         className="block__handle block__handle--start"
         aria-hidden={true}
-        onPointerDown={onHandlePointerDown('start')}
+        onPointerDown={onStartHandlePointerDown}
         onPointerMove={drag.onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
@@ -146,7 +145,7 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
       <span
         className="block__handle block__handle--end"
         aria-hidden={true}
-        onPointerDown={onHandlePointerDown('end')}
+        onPointerDown={onEndHandlePointerDown}
         onPointerMove={drag.onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}

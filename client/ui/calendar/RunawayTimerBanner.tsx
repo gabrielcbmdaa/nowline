@@ -54,7 +54,12 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
         “{plan.title}” has been running for over {RUNAWAY_TIMER_HOURS} hours.
       </span>
       <div className="banner__actions">
-        <button className="button button--small" onClick={stopAtPlannedEnd}>
+        <button
+          className="button button--small"
+          onClick={() => {
+            void stopAtPlannedEnd();
+          }}
+        >
           Stop at planned end
         </button>
         <button

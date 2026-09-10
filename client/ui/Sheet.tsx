@@ -27,22 +27,26 @@ export function Sheet({ title, onClose, children }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const didCaptureFocusRef = useRef(false);
   const startedOnBackdropRef = useRef(false);
 
-  onCloseRef.current = onClose;
-
-  if (!didCaptureFocusRef.current) {
-    didCaptureFocusRef.current = true;
-    const previous = document.activeElement;
-    previousFocusRef.current = previous instanceof HTMLElement ? previous : null;
-  }
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     const panel = panelRef.current;
-    if (panel && !panel.contains(document.activeElement)) {
-      const first = getFocusable(panel)[0];
-      (first ?? panel).focus();
+    if (!panel) return;
+
+    const previous = document.activeElement;
+    previousFocusRef.current = previous instanceof HTMLElement ? previous : null;
+
+    if (!panel.contains(document.activeElement)) {
+      const focusable = getFocusable(panel);
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      } else {
+        panel.focus();
+      }
     }
 
     const identity = {};
