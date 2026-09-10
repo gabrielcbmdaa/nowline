@@ -10,7 +10,7 @@ const OVERRIDES_KEY = 'nowline.overrides.v2';
 const PENDING_KEY = 'nowline.pending.v1';
 const SYNC_KEY = 'nowline.sync.v1';
 
-export type SyncState = { token: string | null; cursor: string | null };
+export type SyncState = { token: string | null; cursor: string | null; joined: boolean };
 
 export type PendingIds = {
   projects: string[];
@@ -337,25 +337,26 @@ export class LocalStorageRepository implements BlockRepository {
     this.ensureMigrated();
     try {
       const raw = localStorage.getItem(SYNC_KEY);
-      if (raw === null) return { token: null, cursor: null };
+      if (raw === null) return { token: null, cursor: null, joined: false };
 
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null) {
         reportWarning(`Stored "${SYNC_KEY}" is not an object`, parsed);
-        return { token: null, cursor: null };
+        return { token: null, cursor: null, joined: false };
       }
 
-      const row = parsed as { token?: unknown; cursor?: unknown };
+      const row = parsed as { token?: unknown; cursor?: unknown; joined?: unknown };
       // Read the two halves apart. A damaged cursor costs one full download;
       // dropping a good token with it costs the owner a password prompt for
       // nothing, and those are not the same price.
       return {
         token: typeof row.token === 'string' ? row.token : null,
         cursor: typeof row.cursor === 'string' ? row.cursor : null,
+        joined: row.joined === true,
       };
     } catch (error) {
       reportWarning(`Reading "${SYNC_KEY}" from storage failed`, error);
-      return { token: null, cursor: null };
+      return { token: null, cursor: null, joined: false };
     }
   }
 

@@ -813,14 +813,36 @@ describe('LocalStorageRepository', () => {
 
   it('starts with no token and no cursor', async () => {
     const repo = new LocalStorageRepository();
-    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null });
+    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null, joined: false });
+  });
+
+  it('treats a device that has never synced as not joined', async () => {
+    const repo = new LocalStorageRepository();
+    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null, joined: false });
+  });
+
+  it('does not read a damaged joined flag as joined', async () => {
+    localStorage.setItem('nowline.sync.v1', JSON.stringify({ token: 'abc', joined: 'yes please' }));
+
+    // Anything but a real `true` means the question has not been answered.
+    // Guessing "joined" here is guessing away the one screen that protects the
+    // owner's data.
+    expect((await new LocalStorageRepository().readSyncState()).joined).toBe(false);
   });
 
   it('keeps the token and the cursor across instances', async () => {
-    await new LocalStorageRepository().writeSyncState({ token: 'abc', cursor: '2026-09-09T20:00:00.000Z' });
+    await new LocalStorageRepository().writeSyncState({
+      token: 'abc',
+      cursor: '2026-09-09T20:00:00.000Z',
+      joined: true,
+    });
 
     const later = new LocalStorageRepository();
-    expect(await later.readSyncState()).toEqual({ token: 'abc', cursor: '2026-09-09T20:00:00.000Z' });
+    expect(await later.readSyncState()).toEqual({
+      token: 'abc',
+      cursor: '2026-09-09T20:00:00.000Z',
+      joined: true,
+    });
   });
 
   it('treats a damaged sync state as never having synced', async () => {
@@ -828,14 +850,22 @@ describe('LocalStorageRepository', () => {
 
     // Forgetting the cursor costs one full download. Trusting a damaged one
     // costs rows that are never asked for again.
-    expect(await new LocalStorageRepository().readSyncState()).toEqual({ token: null, cursor: null });
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({
+      token: null,
+      cursor: null,
+      joined: false,
+    });
   });
 
   it('keeps the token when only the cursor is damaged', async () => {
     localStorage.setItem('nowline.sync.v1', JSON.stringify({ token: 'abc', cursor: 42 }));
 
     // Losing the token means the owner types a password again for nothing.
-    expect(await new LocalStorageRepository().readSyncState()).toEqual({ token: 'abc', cursor: null });
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({
+      token: 'abc',
+      cursor: null,
+      joined: false,
+    });
   });
 
   it('keeps an id in the queue when the row changed while it was in flight', async () => {

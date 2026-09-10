@@ -57,9 +57,37 @@ describe('syncOnce', () => {
     expect(outcome).toEqual({ kind: 'unauthorized' });
   });
 
+  it('refuses to sync until the first-sync question has been settled', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    const send = vi.fn();
+
+    const outcome = await syncOnce({ send, repo });
+
+    // Section 9 of the design: with rows on both sides the device stops and
+    // asks, once. A round fired by a timer must not answer that question.
+    expect(send).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ kind: 'needs-first-sync' });
+  });
+
+  it('syncs normally once it has been settled', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [], overrides: [] },
+      rejected: [],
+    });
+
+    const outcome = await syncOnce({ send, repo });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({ kind: 'done', downloaded: 0, stillOwed: 0 });
+  });
+
   it('sends what is owed and remembers the cursor it was handed', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null });
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
     await repo.savePlan({ ...plan, id: 'p1' });
 
     const send = vi.fn().mockResolvedValue(emptyReply('2026-09-09T20:00:00.000Z'));
@@ -72,7 +100,7 @@ describe('syncOnce', () => {
 
   it('keeps the cursor it had when the network is down', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T1' });
+    await repo.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
 
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null });
     const outcome = await syncOnce({ send, repo });
@@ -84,7 +112,7 @@ describe('syncOnce', () => {
 
   it('keeps a rejected row in the queue', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null });
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
     await repo.savePlan({ ...plan, id: 'p1' });
 
     const send = vi.fn().mockResolvedValue({ ...emptyReply('T2'), rejected: ['p1'] });
@@ -98,7 +126,7 @@ describe('syncOnce', () => {
 
   it('writes down what came back', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null });
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
 
     const send = vi.fn().mockResolvedValue({
       serverTime: 'T3',
@@ -113,13 +141,13 @@ describe('syncOnce', () => {
 
   it('forgets the token when the server stops accepting it', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'stale', cursor: 'T1' });
+    await repo.writeSyncState({ token: 'stale', cursor: 'T1', joined: true });
 
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401 });
     await syncOnce({ send, repo });
 
     // Keeping it means every later round spends a request proving it is dead.
     // The cursor stays: the rows already downloaded are still downloaded.
-    expect(await repo.readSyncState()).toEqual({ token: null, cursor: 'T1' });
+    expect(await repo.readSyncState()).toEqual({ token: null, cursor: 'T1', joined: true });
   });
 });
