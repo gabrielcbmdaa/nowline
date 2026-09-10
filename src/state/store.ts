@@ -164,19 +164,42 @@ export async function stopRunningTimer(now: Date = new Date()): Promise<void> {
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** One round at a time. A second caller waits for the one in the air. */
+let roundInFlight: Promise<void> | null = null;
+
+/** After a round that found no network, try again in half a minute, not in five. */
+const RETRY_AFTER_FAILURE_MS = 30_000;
+
+let retryAfterFailureTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** One round, then refresh what is on screen if anything arrived. */
 export async function syncNow(): Promise<void> {
-  const outcome = await syncOnce();
-  if (outcome.kind !== 'done' || outcome.downloaded === 0) return;
+  if (roundInFlight !== null) return roundInFlight;
 
-  // Two devices can each have started a timer while apart, and both rows are
-  // now here. The rule is the design's, not this file's: newest actualStart
-  // wins, the rest stop at that instant. Saving the losers puts them in the
-  // queue, which is right — stopping them is a change this device made.
-  const losers = resolveConcurrentTimers(await repository.listOverrides());
-  for (const loser of losers) await repository.saveOverride(loser);
+  roundInFlight = (async () => {
+    try {
+      const outcome = await syncOnce();
+      if (outcome.kind === 'offline' || outcome.kind === 'refused') {
+        if (retryAfterFailureTimer !== null) clearTimeout(retryAfterFailureTimer);
+        retryAfterFailureTimer = setTimeout(() => void syncNow(), RETRY_AFTER_FAILURE_MS);
+        return;
+      }
+      if (outcome.kind !== 'done' || outcome.downloaded === 0) return;
 
-  await loadAll();
+      // Two devices can each have started a timer while apart, and both rows are
+      // now here. The rule is the design's, not this file's: newest actualStart
+      // wins, the rest stop at that instant. Saving the losers puts them in the
+      // queue, which is right — stopping them is a change this device made.
+      const losers = resolveConcurrentTimers(await repository.listOverrides());
+      for (const loser of losers) await repository.saveOverride(loser);
+
+      await loadAll();
+    } finally {
+      roundInFlight = null;
+    }
+  })();
+
+  return roundInFlight;
 }
 
 /**
@@ -200,6 +223,7 @@ export function startSyncing(): () => void {
     document.removeEventListener('visibilitychange', onVisible);
     clearInterval(every5Minutes);
     if (syncTimer !== null) clearTimeout(syncTimer);
+    if (retryAfterFailureTimer !== null) clearTimeout(retryAfterFailureTimer);
   };
 }
 

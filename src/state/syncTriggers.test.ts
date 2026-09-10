@@ -141,4 +141,59 @@ describe('the four moments a round happens', () => {
     // every five minutes for as long as the tab lives.
     expect(round).not.toHaveBeenCalled();
   });
+
+  it('does not start a round while one is still in the air', async () => {
+    let release: (value: unknown) => void = () => {};
+    round.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+
+    const first = syncNow();
+    const second = syncNow();
+
+    // Two rounds at once send the same queued ids twice and race each other's
+    // cursor write, which can store an older one than the round before it.
+    expect(round).toHaveBeenCalledTimes(1);
+
+    // And the second caller waits for the first: handing it back a promise that
+    // is already resolved would let it carry on as if the round were over.
+    let secondFinished = false;
+    void second.then(() => {
+      secondFinished = true;
+    });
+    await Promise.resolve();
+    expect(secondFinished).toBe(false);
+
+    release({ kind: 'done', downloaded: 0, stillOwed: 0 });
+    await Promise.all([first, second]);
+    expect(secondFinished).toBe(true);
+  });
+
+  it('tries again soon when the round at boot found no network', async () => {
+    vi.useFakeTimers();
+    round.mockResolvedValue({ kind: 'offline' });
+
+    const stop = startSyncing();
+    await vi.advanceTimersByTimeAsync(0);
+    round.mockClear();
+    round.mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
+
+    // Opening the app is the moment you look at the screen. Waiting five
+    // minutes after a failed first round means looking at a stale one.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(round).toHaveBeenCalledTimes(1);
+
+    stop();
+  });
+
+  it('does not retry after stop when the boot round found no network', async () => {
+    vi.useFakeTimers();
+    round.mockResolvedValue({ kind: 'offline' });
+
+    const stop = startSyncing();
+    await vi.advanceTimersByTimeAsync(0);
+    stop();
+    round.mockClear();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(round).not.toHaveBeenCalled();
+  });
 });
