@@ -51,7 +51,7 @@ Think of a timetable stuck on the fridge with handwritten notes on top of it. Ed
 timetable changes every day; a note changes one. This is why changing a repeating block's
 time in the editor moves all its days at once, while dragging one day moves only that day.
 
-`src/domain/recurrence.ts` resolves the two into what you see.
+`client/domain/recurrence.ts` resolves the two into what you see.
 
 ### Tracked time is derived, never stored
 
@@ -64,7 +64,7 @@ that crosses midnight to both days — it has the real timestamps, not a lump su
 
 ### The hour scale lives in exactly one constant
 
-`PIXELS_PER_HOUR = 64` in `src/domain/geometry.ts`. Nothing anywhere else may hardcode 64,
+`PIXELS_PER_HOUR = 64` in `client/domain/geometry.ts`. Nothing anywhere else may hardcode 64,
 or 1536, or a pixels-per-minute figure — everything goes through `minuteToPixel` and
 `DAY_HEIGHT`. Pinch-to-zoom on the hour scale is a wanted feature that has not been built;
 when it is, that one constant becomes a variable and the whole calendar follows.
@@ -75,14 +75,14 @@ The same rule holds for `SNAP_MINUTES = 15` and `MINUTES_PER_DAY`.
 
 `new Date('2026-09-07')` parses as **UTC** midnight, which in most of the world is a
 different calendar day. Every date in this app is a local day key built through
-`src/domain/dates.ts`, and a date-only string must never reach `new Date`. A test in
-`src/ui/sheets/DatePickerSheet.test.ts` fails if that rule is broken in the month grid,
+`client/domain/dates.ts`, and a date-only string must never reach `new Date`. A test in
+`client/ui/sheets/DatePickerSheet.test.ts` fails if that rule is broken in the month grid,
 which is where it bit hardest.
 
 ### One file to swap for a server
 
-`src/storage/repository.ts` defines the `BlockRepository` interface and exports the active
-implementation. Nothing outside `src/storage/` touches `localStorage` or knows it
+`client/storage/repository.ts` defines the `BlockRepository` interface and exports the active
+implementation. Nothing outside `client/storage/` touches `localStorage` or knows it
 exists, tests aside.
 Every method is `async` even though the current implementation is synchronous, precisely
 so that a network implementation can replace it without touching a single call site.
@@ -106,7 +106,7 @@ readable — yellow goes from 1.80 to 11.65.
 
 A tracked block is dimmed by blending its **background** toward the page colour, not with
 CSS `opacity`, because `opacity` fades the text along with the background and cancels out
-the contrast it just gained. `src/ui/textColor.ts`.
+the contrast it just gained. `client/ui/textColor.ts`.
 
 ### A block may cross midnight, as one rectangle that overflows its day
 
@@ -143,7 +143,7 @@ confirmation at all.
 
 ### One timer at a time
 
-Timer transitions are serialised on a promise queue in `src/state/store.ts`, and a start
+Timer transitions are serialised on a promise queue in `client/state/store.ts`, and a start
 re-reads the running timer from storage before deciding. Two browser tabs can still race in
 the gap between that read and the write — closing it needs an atomic compare-and-set that
 `localStorage` cannot offer and a server can. See the caveats below.
@@ -151,10 +151,10 @@ the gap between that read and the write — closing it needs an atomic compare-a
 ## Layout
 
 ```
-src/domain/     pure logic: geometry, dates, the stopwatch, recurrence, totals
-src/storage/    the repository interface and its localStorage implementation
-src/state/      one module-level store, exposed through useSyncExternalStore
-src/ui/         React components; src/ui/calendar/ is the strip
+client/domain/      pure logic: geometry, dates, the stopwatch, recurrence, totals
+client/storage/    the repository interface and its localStorage implementation
+client/state/        one module-level store, exposed through useSyncExternalStore
+client/ui/              React components; client/ui/calendar/ is the strip
 ```
 
 No router, no state library, no CSS framework, no calendar library. React 19, TypeScript,
@@ -169,7 +169,7 @@ Vite and Vitest.
   in CI. This is the most valuable thing left to add.
 - **The grid is always 24 hours tall, even on the two days that are not.** Blocks are
   placed by wall-clock minute and totals are summed from real timestamps, so both are
-  right on a clock change — `src/domain/dates.ts`, with the tests pinned to Madrid
+  right on a clock change — `client/domain/dates.ts`, with the tests pinned to Madrid
   because it changes its clocks. What does not happen is the grid growing or shrinking:
   the skipped hour still takes up its 64 pixels.
 - **Block times show no AM/PM** — `7:00` reads the same at either end of the day. The hour
