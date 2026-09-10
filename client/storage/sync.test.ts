@@ -210,6 +210,23 @@ describe('settleFirstSync', () => {
     // And the question is still unanswered, so the engine must stay shut.
     expect(state.joined).toBe(false);
   });
+
+  it('refuses to take a cloud that holds nothing', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [],
+    });
+
+    const outcome = await settleFirstSync('take-the-cloud', { send, repo });
+
+    // "Take the cloud" against an empty cloud is "throw mine away and get
+    // nothing". Whatever the owner meant, it was not that.
+    expect(outcome).toEqual({ kind: 'undecided' });
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+    expect((await repo.readSyncState()).joined).toBe(false);
+  });
 });
 
 describe('syncOnce', () => {

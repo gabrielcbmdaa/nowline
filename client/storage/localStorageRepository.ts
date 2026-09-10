@@ -465,8 +465,15 @@ export class LocalStorageRepository implements BlockRepository {
    */
   async keepDiscardedCopy(stamp: string): Promise<void> {
     this.ensureMigrated();
+    // Never overwrite: two choices on one day would otherwise leave one key,
+    // and the copy that mattered is the first one. Nothing reads these; they
+    // exist for the day somebody has to go and get their data back by hand.
+    let key = `nowline.discarded.${stamp}`;
+    for (let attempt = 2; localStorage.getItem(key) !== null; attempt += 1) {
+      key = `nowline.discarded.${stamp}.${attempt}`;
+    }
     localStorage.setItem(
-      `nowline.discarded.${stamp}`,
+      key,
       JSON.stringify({
         projects: this.read<Project>(PROJECTS_KEY),
         plans: this.read<BlockPlan>(PLANS_KEY),

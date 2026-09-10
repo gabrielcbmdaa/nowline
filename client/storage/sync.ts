@@ -219,6 +219,9 @@ async function runSettleFirstSync(
           ? { kind: 'unauthorized' }
           : { kind: 'refused', status: reply.status };
     }
+    const arriving =
+      reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
+    if (arriving === 0) return { kind: 'undecided' };
     // The copy first, always, and only then the replacement.
     await repo.keepDiscardedCopy(today());
     await repo.replaceAllFromServer(reply.changes);

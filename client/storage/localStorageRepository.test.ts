@@ -1043,6 +1043,23 @@ describe('LocalStorageRepository', () => {
     expect((await repo.listPlans()).map((row) => row.id)).toEqual(['p1']);
   });
 
+  it('never writes over a copy it already kept', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'the-original' });
+    await repo.keepDiscardedCopy('2026-09-10');
+
+    await repo.applyFromServer({ projects: [], plans: [{ ...plan, id: 'from-the-cloud' }], overrides: [] });
+    await repo.keepDiscardedCopy('2026-09-10');
+
+    // Two choices on one day used to leave one key. The first copy is the one
+    // holding what was actually the owner's; losing it to the second is losing
+    // the only way back.
+    const first = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-10') ?? 'null');
+    expect(first.plans.map((row: { id: string }) => row.id)).toEqual(['the-original']);
+    const second = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-10.2') ?? 'null');
+    expect(second).not.toBeNull();
+  });
+
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.savePlan(plan);
