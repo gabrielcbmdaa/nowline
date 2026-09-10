@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { toDateKey } from '../domain/dates';
-import { newId, startTimer, stopTimer } from '../domain/timer';
+import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import { repository } from '../storage/repository';
 import { syncOnce } from '../storage/sync';
@@ -167,7 +167,16 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 /** One round, then refresh what is on screen if anything arrived. */
 export async function syncNow(): Promise<void> {
   const outcome = await syncOnce();
-  if (outcome.kind === 'done' && outcome.downloaded > 0) await loadAll();
+  if (outcome.kind !== 'done' || outcome.downloaded === 0) return;
+
+  // Two devices can each have started a timer while apart, and both rows are
+  // now here. The rule is the design's, not this file's: newest actualStart
+  // wins, the rest stop at that instant. Saving the losers puts them in the
+  // queue, which is right — stopping them is a change this device made.
+  const losers = resolveConcurrentTimers(await repository.listOverrides());
+  for (const loser of losers) await repository.saveOverride(loser);
+
+  await loadAll();
 }
 
 /**
