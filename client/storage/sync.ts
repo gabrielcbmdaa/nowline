@@ -50,6 +50,7 @@ export type FirstSyncDecision = 'upload-mine' | 'take-the-cloud' | 'ask-the-owne
 export type FirstSyncLook =
   | { kind: 'ask'; local: number; remote: number }
   | { kind: 'settled'; choice: FirstSyncDecision }
+  | { kind: 'already-joined' }
   | { kind: 'offline' }
   | { kind: 'unauthorized' }
   | { kind: 'refused'; status: number | null };
@@ -168,8 +169,11 @@ async function runInspectFirstSync(
   const send = deps.send ?? apiClient.sync;
   const repo = deps.repo ?? liveRepository;
 
-  const { token } = await repo.readSyncState();
+  const { token, joined } = await repo.readSyncState();
   if (token === null) return { kind: 'unauthorized' };
+  // Asked and answered. A screen that keeps offering the first-sync buttons is
+  // offering "throw away everything written since" for ever.
+  if (joined) return { kind: 'already-joined' };
 
   const nothing = { projects: [], plans: [], overrides: [] };
   const reply = await send(token, null, nothing);
@@ -225,8 +229,10 @@ async function runSettleFirstSync(
     // The copy first, always, and only then the replacement.
     await repo.keepDiscardedCopy(today());
     await repo.replaceAllFromServer(reply.changes);
+    const downloaded =
+      reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
     await repo.writeSyncState({ token: state.token, cursor: reply.serverTime, joined: true });
-    return { kind: 'done', downloaded: 0, stillOwed: 0 };
+    return { kind: 'done', downloaded, stillOwed: 0 };
   }
 
   await repo.queueEverything();
