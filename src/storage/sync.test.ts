@@ -150,6 +150,41 @@ describe('settleFirstSync', () => {
     expect((await repo.readSyncState()).joined).toBe(false);
   });
 
+  it('does not claim the device joined until the round has gone through', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+
+    let seenDuringTheRound: boolean | null = null;
+    const send = vi.fn().mockImplementation(async () => {
+      seenDuringTheRound = (await repo.readSyncState()).joined;
+      return { serverTime: 'T1', changes: { projects: [], plans: [{ ...plan, id: 'theirs' }], overrides: [] }, rejected: [] };
+    });
+
+    await settleFirstSync('upload-mine', { send, repo });
+
+    // A flag that says "answered" while the answer is still in the air is a
+    // flag that lies to whoever reads it in that window.
+    expect(seenDuringTheRound).toBe(false);
+    expect((await repo.readSyncState()).joined).toBe(true);
+  });
+
+  it('leaves the flag alone when the settling round fails', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    let seenDuringTheRound: boolean | null = null;
+    const send = vi.fn().mockImplementation(async () => {
+      seenDuringTheRound = (await repo.readSyncState()).joined;
+      return { failed: true, kind: 'offline', status: null };
+    });
+
+    // Nothing to revert, because nothing was claimed. Looking only at the end
+    // would pass just as happily for a flag raised and then put back, which is
+    // the shape this task removed.
+    expect(await settleFirstSync('upload-mine', { send, repo })).toEqual({ kind: 'offline' });
+    expect(seenDuringTheRound).toBe(false);
+    expect((await repo.readSyncState()).joined).toBe(false);
+  });
+
   it('refuses to act on "ask the owner", which is not a decision', async () => {
     const repo = new LocalStorageRepository();
     await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });

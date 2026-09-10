@@ -82,6 +82,12 @@ export function syncOnce(
 
 async function runSyncOnce(
   deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
+  /**
+   * Only the first-sync settle passes this. It is the caller saying "the owner
+   * chose, I am carrying that out" — which is a different fact from "this
+   * device has joined", and the flag on disk must not be used to fake it.
+   */
+  answeredByTheOwner = false,
 ): Promise<SyncOutcome> {
   const send = deps.send ?? apiClient.sync;
   const repo = deps.repo ?? liveRepository;
@@ -93,7 +99,7 @@ async function runSyncOnce(
   // the design: ids are made per device, so merging two sides without asking
   // does not lose data, it doubles it — and a round fired by a timer is not a
   // decision anybody made.
-  if (!joined) return { kind: 'needs-first-sync' };
+  if (!joined && !answeredByTheOwner) return { kind: 'needs-first-sync' };
 
   const pending = await repo.listPending();
   const outgoing = await repo.rowsToUpload(pending);
@@ -221,15 +227,18 @@ async function runSettleFirstSync(
   }
 
   await repo.queueEverything();
-  // Joined only once a round has actually gone through: marking it before
-  // would let the next timer round merge blind.
-  await repo.writeSyncState({ ...state, joined: true });
-  const outcome = await runSyncOnce({ send, repo });
-  if (outcome.kind !== 'done') {
-    // Only the flag. Whether the token is still any good was decided by the
-    // round, one layer down, and it is not this function's to overrule.
+  const outcome = await runSyncOnce({ send, repo }, true);
+  // That round wrote the state back with the `joined` it read when it started,
+  // which is still false. The line below is what makes it true, and between the
+  // two the disk is wrong in the safe direction: another tab reading it refuses
+  // to sync. Written down in this phase's lessons rather than fixed, because
+  // fixing it means every writer touching only its own field, and that is a
+  // change to the repository, not to this line.
+  // The flag goes up only now, and only if the round really went through.
+  // There is nothing to revert on the other paths, because nothing was claimed.
+  if (outcome.kind === 'done') {
     const after = await repo.readSyncState();
-    await repo.writeSyncState({ ...after, joined: false });
+    await repo.writeSyncState({ ...after, joined: true });
   }
   return outcome;
 }
