@@ -5,6 +5,38 @@ import { repository as liveRepository } from './repository';
 import type { BlockRepository } from './repository';
 import { reportWarning } from '../reportError';
 
+/**
+ * Nothing in this module runs while something else in it is running.
+ *
+ * There are three ways in — a round, a look, and a settle — and they all read
+ * and write the same two things: this device's queue and its cursor. Two of
+ * them overlapping is how a cursor written by one gets replaced by an older
+ * one from the other, and how a first sync that failed still leaves both sides
+ * mixed. One lock on one of the three doors, which is what this had, only
+ * closes that door.
+ *
+ * Each public function wraps its own body. The bodies call each other directly
+ * — a settle runs a round inside itself, and if the inner call waited for the
+ * lock the outer one holds, it would wait for ever.
+ *
+ * A body that never settles holds the door forever. In production the only body
+ * that waits is `apiClient.sync`, bounded by `GIVE_UP_AFTER_MS` in
+ * `apiClient.ts`; deleting that deadline does not make this queue recover.
+ */
+let queue: Promise<unknown> = Promise.resolve();
+
+function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  // Two lines keep the door open after a failure, and either one alone is
+  // enough — which is why removing one of them breaks nothing and looks safe.
+  // `then(work, work)` runs the next operation even when the previous promise
+  // rejected; `mine.catch` hands the queue a fulfilled promise so the one after
+  // that has something to wait on. Take both away and the first failed round
+  // shuts the engine for good, with nothing on screen to say why.
+  const mine = queue.then(work, work);
+  queue = mine.catch(() => undefined);
+  return mine;
+}
+
 export type SyncOutcome =
   | { kind: 'done'; downloaded: number; stillOwed: number }
   | { kind: 'offline' }
@@ -42,7 +74,13 @@ export function firstSyncDecision(local: number, remote: number): FirstSyncDecis
  * missing comes down. Injectable on purpose — the app calls it with no
  * arguments, and the tests hand it a server that never touches the network.
  */
-export async function syncOnce(
+export function syncOnce(
+  deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
+): Promise<SyncOutcome> {
+  return oneAtATime(() => runSyncOnce(deps));
+}
+
+async function runSyncOnce(
   deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
 ): Promise<SyncOutcome> {
   const send = deps.send ?? apiClient.sync;
@@ -112,7 +150,13 @@ export async function syncOnce(
  * rows" is a screen, and a screen that has not been shown yet cannot be
  * overruled by a round that a timer started.
  */
-export async function inspectFirstSync(
+export function inspectFirstSync(
+  deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
+): Promise<FirstSyncLook> {
+  return oneAtATime(() => runInspectFirstSync(deps));
+}
+
+async function runInspectFirstSync(
   deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
 ): Promise<FirstSyncLook> {
   const send = deps.send ?? apiClient.sync;
@@ -137,7 +181,14 @@ export async function inspectFirstSync(
   return choice === 'ask-the-owner' ? { kind: 'ask', local, remote } : { kind: 'settled', choice };
 }
 
-export async function settleFirstSync(
+export function settleFirstSync(
+  choice: FirstSyncDecision,
+  deps: { send?: typeof apiClient.sync; repo?: BlockRepository; today?: () => string } = {},
+): Promise<SyncOutcome> {
+  return oneAtATime(() => runSettleFirstSync(choice, deps));
+}
+
+async function runSettleFirstSync(
   choice: FirstSyncDecision,
   deps: { send?: typeof apiClient.sync; repo?: BlockRepository; today?: () => string } = {},
 ): Promise<SyncOutcome> {
@@ -173,7 +224,7 @@ export async function settleFirstSync(
   // Joined only once a round has actually gone through: marking it before
   // would let the next timer round merge blind.
   await repo.writeSyncState({ ...state, joined: true });
-  const outcome = await syncOnce({ send, repo });
+  const outcome = await runSyncOnce({ send, repo });
   if (outcome.kind !== 'done') {
     // Only the flag. Whether the token is still any good was decided by the
     // round, one layer down, and it is not this function's to overrule.

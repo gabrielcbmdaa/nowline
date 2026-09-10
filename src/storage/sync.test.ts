@@ -301,3 +301,106 @@ describe('syncOnce', () => {
     expect((await repo.listPending()).plans).toEqual(['p1']);
   });
 });
+
+describe('engine door', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('does not let a look run while a round is still going', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+
+    const order: string[] = [];
+    let releaseRound: (value: unknown) => void = () => {};
+    const send = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        order.push('round started');
+        await new Promise((resolve) => {
+          releaseRound = resolve;
+        });
+        order.push('round finished');
+        return { serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
+      })
+      .mockImplementationOnce(async () => {
+        order.push('look started');
+        return { serverTime: 'T2', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
+      });
+
+    const round = syncOnce({ send, repo });
+    const look = inspectFirstSync({ send, repo });
+
+    // Wait for the round to be inside `send`, not for ten milliseconds to pass:
+    // a sleep proves the look was slower, not that it was held.
+    await vi.waitFor(() => expect(order).toEqual(['round started']));
+    await Promise.resolve();
+    expect(order).toEqual(['round started']);
+
+    releaseRound(undefined);
+    await Promise.all([round, look]);
+    expect(order).toEqual(['round started', 'round finished', 'look started']);
+  });
+
+  it('makes a settle wait for a round that is already going', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+
+    const order: string[] = [];
+    let releaseRound: (value: unknown) => void = () => {};
+    const send = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        order.push('round');
+        await new Promise((resolve) => {
+          releaseRound = resolve;
+        });
+        return { serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
+      })
+      .mockImplementationOnce(async () => {
+        order.push('settle');
+        return { serverTime: 'T2', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
+      });
+
+    const round = syncOnce({ send, repo });
+    const settle = settleFirstSync('upload-mine', { send, repo });
+    await vi.waitFor(() => expect(order).toEqual(['round']));
+    await Promise.resolve();
+    expect(order).toEqual(['round']);
+
+    releaseRound(undefined);
+    await Promise.all([round, settle]);
+    expect(order).toEqual(['round', 'settle']);
+  });
+
+  it('opens the door again after an operation throws', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('something inside the round exploded'))
+      .mockResolvedValueOnce({
+        serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [],
+      });
+
+    // A failure that shuts the door for good is worse than the failure: the app
+    // goes quiet and nothing says why.
+    await expect(syncOnce({ send, repo })).rejects.toThrow('something inside the round exploded');
+    expect(await syncOnce({ send, repo })).toEqual({ kind: 'done', downloaded: 0, stillOwed: 0 });
+  });
+
+  it('lets a settle finish even though it runs a round inside itself', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [],
+    });
+
+    // The one that would deadlock if the inner round waited for the outer
+    // settle to release the same lock.
+    const outcome = await settleFirstSync('upload-mine', { send, repo });
+
+    expect(outcome).toEqual({ kind: 'done', downloaded: 0, stillOwed: 0 });
+  });
+});
