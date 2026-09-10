@@ -184,6 +184,13 @@ export async function syncNow(): Promise<void> {
         retryAfterFailureTimer = setTimeout(() => void syncNow(), RETRY_AFTER_FAILURE_MS);
         return;
       }
+      // A round that got through cancels the one a failure had booked: the
+      // network is back, and the retry is asking a question already answered.
+      if (retryAfterFailureTimer !== null) {
+        clearTimeout(retryAfterFailureTimer);
+        retryAfterFailureTimer = null;
+      }
+
       if (outcome.kind !== 'done' || outcome.downloaded === 0) return;
 
       // Two devices can each have started a timer while apart, and both rows are

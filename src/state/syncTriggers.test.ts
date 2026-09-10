@@ -129,6 +129,25 @@ describe('the four moments a round happens', () => {
     stop();
   });
 
+  it('calls off the retry once a round has got through', async () => {
+    vi.useFakeTimers();
+    round.mockResolvedValue({ kind: 'offline' });
+
+    const stop = startSyncing();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The network came back before the retry was due, through some other
+    // wake-up. The round that is owed is no longer owed.
+    round.mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
+    await syncNow();
+    round.mockClear();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(round).not.toHaveBeenCalled();
+
+    stop();
+  });
+
   it('stops asking once the caller says so', async () => {
     vi.useFakeTimers();
     const stop = startSyncing();
