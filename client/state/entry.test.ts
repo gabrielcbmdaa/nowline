@@ -42,6 +42,7 @@ describe('deciding what the app shows', () => {
     // screen replaces everything written since the device joined.
     expect(getState().entry).toBe('ready');
     expect(getState().firstSync).toBeNull();
+    expect(settle).not.toHaveBeenCalled();
   });
 
   it('shows loading while the engine is still deciding', async () => {
@@ -85,16 +86,22 @@ describe('deciding what the app shows', () => {
 
     await decideEntry();
 
-    expect(getState().entry).not.toBe('ready');
+    expect(getState().entry).toBe('signed-out');
+    expect(getState().firstSync).toBeNull();
   });
 
   it('goes back to signing in when the token stops working', async () => {
-    await repository.writeSyncState({ token: 'stale', cursor: 'T1', joined: true });
+    await repository.writeSyncState({ token: 'stale', cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'unauthorized' });
 
     await decideEntry();
 
     expect(getState().entry).toBe('signed-out');
+    expect(await repository.readSyncState()).toEqual({
+      token: 'stale',
+      cursor: null,
+      joined: false,
+    });
   });
 
   it('does not claim to be ready when nobody answered', async () => {
@@ -106,7 +113,8 @@ describe('deciding what the app shows', () => {
     // Showing the calendar here would let the four wake-ups run against a
     // device that never answered the question — which the engine refuses, so
     // the owner would see an app that silently never syncs.
-    expect(getState().entry).not.toBe('ready');
+    expect(getState().entry).toBe('signed-out');
+    expect(getState().firstSync).toBeNull();
   });
 
   it('shows the rows a carried-out recommendation brought down', async () => {

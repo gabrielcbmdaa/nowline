@@ -74,6 +74,11 @@ describe('SignInScreen', () => {
       throw new Error('expected a username input');
     }
     expect(usernameInput.value).toBe('gabriel');
+    const passwordInput = screen.getByLabelText('Password');
+    if (!(passwordInput instanceof HTMLInputElement)) {
+      throw new Error('expected a password input');
+    }
+    expect(passwordInput.value).toBe('wrong');
   });
 
   it('tells the owner the door is shut, not that the server is broken', async () => {

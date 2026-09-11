@@ -111,4 +111,18 @@ describe('FirstSyncScreen', () => {
     expect(onSettled).not.toHaveBeenCalled();
     expect(screen.queryByRole('alert')).toBeNull();
   });
+
+  it('stays put and says why when the server shuts the door on too many attempts', async () => {
+    vi.spyOn(sync, 'settleFirstSync').mockResolvedValue({ kind: 'refused', status: 429 });
+    const onSettled = vi.fn();
+    render(
+      <FirstSyncScreen local={34} remote={120} onSettled={onSettled} onSignedOut={vi.fn()} />,
+    );
+
+    clickButton(/upload mine/i);
+    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeTruthy());
+
+    expect(onSettled).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/too many attempts/i);
+  });
 });
