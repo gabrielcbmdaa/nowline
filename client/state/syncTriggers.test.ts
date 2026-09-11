@@ -8,10 +8,12 @@ vi.mock('../storage/sync', () => ({
   syncOnce: vi.fn(),
 }));
 
-import { syncOnce } from '../storage/sync';
+import { inspectFirstSync, syncOnce } from '../storage/sync';
 import { repository } from '../storage/repository';
 import type { BlockOverride } from '../domain/types';
-import { getState, loadAll, savePlan, startSyncing, syncNow } from './store';
+import { decideEntry, getState, loadAll, savePlan, startSyncing, syncNow } from './store';
+
+const look = inspectFirstSync as Mock;
 
 const round = syncOnce as Mock;
 
@@ -46,6 +48,7 @@ describe('the four moments a round happens', () => {
     localStorage.clear();
     vi.useRealTimers();
     round.mockReset();
+    look.mockReset();
     round.mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
     await loadAll();
   });
@@ -241,6 +244,29 @@ describe('the four moments a round happens', () => {
 
     await vi.waitFor(() => expect(round).toHaveBeenCalledTimes(1));
     stop();
+  });
+
+  it('sends the owner to sign in when a round is rejected mid-life', async () => {
+    await repository.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    look.mockResolvedValue({ kind: 'already-joined' });
+    await decideEntry();
+    round.mockResolvedValue({ kind: 'unauthorized' });
+
+    await syncNow();
+
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('does not send the owner to sign in while the engine is still deciding', async () => {
+    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    look.mockReturnValue(new Promise(() => {}));
+    void decideEntry();
+    await vi.waitFor(() => expect(getState().entry).toBe('deciding'));
+
+    round.mockResolvedValue({ kind: 'unauthorized' });
+    await syncNow();
+
+    expect(getState().entry).toBe('deciding');
   });
 
   it('does not run a round when the tab is being hidden', async () => {

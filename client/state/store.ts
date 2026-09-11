@@ -233,6 +233,14 @@ export async function syncNow(): Promise<void> {
         clearTimeout(retryAfterFailureTimer);
         retryAfterFailureTimer = null;
       }
+      // The engine already dropped the token and kept `joined`; what is left
+      // is to stop showing a calendar that will never sync again. Only from
+      // the calendar: while the entry is being decided, `decideEntry` is about
+      // to say where the app goes, and a form shown early is a live button.
+      if (outcome.kind === 'unauthorized' && state.entry === 'ready') {
+        setState({ entry: 'signed-out', firstSync: null });
+        return;
+      }
 
       if (outcome.kind !== 'done' || outcome.downloaded === 0) return;
 
