@@ -1,5 +1,9 @@
-import { useState, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { settleFirstSync, type SyncOutcome } from '../storage/sync';
+
+// A double tap is tens of milliseconds; a bounce tap, a few hundred. 1.5 s covers
+// both without the button looking broken.
+export const CONFIRM_ARMS_AFTER_MS = 1500;
 
 type Props = {
   local: number;
@@ -31,6 +35,21 @@ export function FirstSyncScreen({ local, remote, onSettled, onSignedOut }: Props
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmReplace, setConfirmReplace] = useState(false);
+  const [confirmArmed, setConfirmArmed] = useState(false);
+
+  useEffect(() => {
+    if (!confirmReplace) {
+      return;
+    }
+
+    const id = window.setTimeout(() => {
+      setConfirmArmed(true);
+    }, CONFIRM_ARMS_AFTER_MS);
+    return () => {
+      clearTimeout(id);
+      setConfirmArmed(false);
+    };
+  }, [confirmReplace]);
 
   async function carryOut(choice: 'upload-mine' | 'take-the-cloud') {
     if (submitting) return;
@@ -54,6 +73,8 @@ export function FirstSyncScreen({ local, remote, onSettled, onSignedOut }: Props
     }
   }
 
+  const localNoun = local === 1 ? 'block' : 'blocks';
+
   return (
     <div className="gate">
       <h1 className="sheet__title">Two copies of your data</h1>
@@ -72,41 +93,63 @@ export function FirstSyncScreen({ local, remote, onSettled, onSignedOut }: Props
       )}
 
       <div className="gate__actions">
-        <button
-          className="button button--primary"
-          type="button"
-          disabled={submitting}
-          onClick={() => {
-            void carryOut('upload-mine');
-          }}
-        >
-          {submitting ? 'Working' : 'Upload mine'}
-        </button>
-
         {confirmReplace ? (
-          <button
-            className="button button--danger"
-            type="button"
-            disabled={submitting}
-            onClick={() => {
-              void carryOut('take-the-cloud');
-            }}
-          >
-            {submitting ? 'Working' : 'Yes, replace mine'}
-          </button>
+          <>
+            <button
+              className="button button--danger"
+              type="button"
+              disabled={submitting || !confirmArmed}
+              onClick={() => {
+                void carryOut('take-the-cloud');
+              }}
+            >
+              {submitting ? 'Working' : 'Yes, replace mine'}
+            </button>
+            <button
+              className="button"
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                setConfirmArmed(false);
+                setConfirmReplace(false);
+              }}
+            >
+              Cancel
+            </button>
+          </>
         ) : (
-          <button
-            className="button"
-            type="button"
-            disabled={submitting}
-            onClick={() => {
-              setConfirmReplace(true);
-            }}
-          >
-            Take the cloud
-          </button>
+          <>
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                void carryOut('upload-mine');
+              }}
+            >
+              {submitting ? 'Working' : 'Upload mine'}
+            </button>
+            <button
+              className="button"
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                setConfirmArmed(false);
+                setConfirmReplace(true);
+              }}
+            >
+              Take the cloud
+            </button>
+          </>
         )}
       </div>
+
+      {confirmReplace && (
+        <p>
+          This replaces the {local} {localNoun} on this device with the cloud&apos;s {remote}. The
+          replaced copy stays on this device.
+        </p>
+      )}
     </div>
   );
 }

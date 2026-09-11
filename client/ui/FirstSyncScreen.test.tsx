@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as sync from '../storage/sync';
-import { FirstSyncScreen } from './FirstSyncScreen';
+import { CONFIRM_ARMS_AFTER_MS, FirstSyncScreen } from './FirstSyncScreen';
 
 function clickButton(name: string | RegExp): void {
   fireEvent.click(screen.getByRole('button', { name }));
@@ -12,6 +12,7 @@ describe('FirstSyncScreen', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('shows both counts, because the choice is between them', () => {
@@ -82,19 +83,106 @@ describe('FirstSyncScreen', () => {
   });
 
   it('replaces mine only after the second tap, and with the right choice', async () => {
+    vi.useFakeTimers();
     const settle = vi.spyOn(sync, 'settleFirstSync').mockResolvedValue({ kind: 'done', downloaded: 120, stillOwed: 0 });
     const onSettled = vi.fn();
     render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} onSignedOut={vi.fn()} />);
 
     clickButton(/take the cloud/i);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONFIRM_ARMS_AFTER_MS);
+    });
     clickButton(/yes, replace/i);
-    await vi.waitFor(() => expect(onSettled).toHaveBeenCalled());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
 
     // The confirmation button is the one that discards rows; sending
     // 'upload-mine' from it would keep everything and tell the owner it did
     // the opposite.
     expect(settle).toHaveBeenCalledTimes(1);
     expect(settle).toHaveBeenCalledWith('take-the-cloud');
+    expect(onSettled).toHaveBeenCalled();
+  });
+
+  it('does not let a double tap confirm the replace', async () => {
+    vi.useFakeTimers();
+    const settle = vi.spyOn(sync, 'settleFirstSync');
+    render(<FirstSyncScreen local={1} remote={7} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
+
+    clickButton(/take the cloud/i);
+    // The second tap of a double tap lands where the first did, a few tens of
+    // milliseconds later. Whatever is there must do nothing.
+    const confirm = screen.getByRole('button', { name: /yes, replace/i });
+    if (!(confirm instanceof HTMLButtonElement)) throw new Error('expected a button');
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONFIRM_ARMS_AFTER_MS - 1);
+    });
+    expect(confirm.disabled).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(confirm.disabled).toBe(false);
+
+    expect(settle).not.toHaveBeenCalled();
+  });
+
+  it('says what the replace would do, with the real numbers', () => {
+    render(<FirstSyncScreen local={1} remote={7} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
+
+    clickButton(/take the cloud/i);
+
+    // The sentence is the confirmation; a bare "are you sure" tells the owner
+    // nothing about what is about to be thrown away.
+    const sentence = screen.getByText(/replaces the 1 block on this device with the cloud's 7/i);
+    expect(sentence).toBeTruthy();
+    expect(screen.getByText(/copy stays on this device/i)).toBeTruthy();
+    const row = sentence.closest('.gate')?.querySelector('.gate__actions');
+    if (!(row instanceof HTMLElement)) throw new Error('expected .gate__actions');
+    // A paragraph above the row pushes the buttons down and the finger misses Cancel.
+    expect(row.compareDocumentPosition(sentence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('clears the arm timeout when the owner cancels before it fires', async () => {
+    vi.useFakeTimers();
+    render(<FirstSyncScreen local={1} remote={7} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
+
+    clickButton(/take the cloud/i);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONFIRM_ARMS_AFTER_MS - 1);
+    });
+    clickButton(/cancel/i);
+    clickButton(/take the cloud/i);
+    const confirm = screen.getByRole('button', { name: /yes, replace/i });
+    if (!(confirm instanceof HTMLButtonElement)) throw new Error('expected a button');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(confirm.disabled).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONFIRM_ARMS_AFTER_MS - 1);
+    });
+    expect(confirm.disabled).toBe(false);
+  });
+
+  it('puts Cancel where Take the cloud was, and Cancel puts everything back', () => {
+    const settle = vi.spyOn(sync, 'settleFirstSync');
+    render(<FirstSyncScreen local={1} remote={7} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
+
+    const before = screen.getAllByRole('button').map((button) => button.textContent);
+    clickButton(/take the cloud/i);
+
+    // Same row, same two slots: the second slot is where the finger is, and it
+    // now holds the harmless button; the dangerous one took the first slot.
+    const during = screen.getAllByRole('button').map((button) => button.textContent);
+    expect(before).toEqual(['Upload mine', 'Take the cloud']);
+    expect(during).toEqual(['Yes, replace mine', 'Cancel']);
+
+    clickButton(/cancel/i);
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(before);
+    expect(settle).not.toHaveBeenCalled();
   });
 
   it('asks to sign in again when the session expired', async () => {
