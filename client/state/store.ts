@@ -69,6 +69,8 @@ export async function loadAll(): Promise<void> {
 }
 
 export async function decideEntry(): Promise<void> {
+  setState({ entry: 'deciding', firstSync: null });
+
   const { token } = await repository.readSyncState();
   if (token === null) return setState({ entry: 'signed-out', firstSync: null });
 

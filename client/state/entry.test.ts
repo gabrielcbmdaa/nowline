@@ -44,6 +44,18 @@ describe('deciding what the app shows', () => {
     expect(getState().firstSync).toBeNull();
   });
 
+  it('shows loading while the engine is still deciding', async () => {
+    await decideEntry();
+    expect(getState().entry).toBe('signed-out');
+
+    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    look.mockReturnValue(new Promise(() => {}));
+
+    void decideEntry();
+
+    await vi.waitFor(() => expect(getState().entry).toBe('deciding'));
+  });
+
   it('asks when both sides hold rows, and carries the counts to the screen', async () => {
     await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'ask', local: 34, remote: 120 });
