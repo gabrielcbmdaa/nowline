@@ -157,9 +157,12 @@ async function runSyncOnce(
  * rows" is a screen, and a screen that has not been shown yet cannot be
  * overruled by a round that a timer started.
  */
-export function inspectFirstSync(
+export async function inspectFirstSync(
   deps: { send?: typeof apiClient.sync; repo?: BlockRepository } = {},
 ): Promise<FirstSyncLook> {
+  const repo = deps.repo ?? liveRepository;
+  const { joined } = await repo.readSyncState();
+  if (joined) return { kind: 'already-joined' };
   return oneAtATime(() => runInspectFirstSync(deps));
 }
 

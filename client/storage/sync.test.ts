@@ -104,6 +104,35 @@ describe('inspectFirstSync', () => {
     expect(await inspectFirstSync({ send, repo })).toEqual({ kind: 'already-joined' });
     expect(send).not.toHaveBeenCalled();
   });
+
+  it('does not wait behind a round when the device already joined', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    let releaseSend: () => void = () => {};
+    const send = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseSend = () => resolve(emptyReply('T2'));
+        }),
+    );
+
+    const round = syncOnce({ send, repo });
+
+    const outcome = await Promise.race([
+      inspectFirstSync({ send, repo }).then((result) => ({ kind: 'resolved' as const, result })),
+      new Promise<{ kind: 'timeout' }>((resolve) => {
+        setTimeout(() => resolve({ kind: 'timeout' }), 100);
+      }),
+    ]);
+
+    expect(outcome).toEqual({
+      kind: 'resolved',
+      result: { kind: 'already-joined' },
+    });
+
+    releaseSend();
+    await round;
+  });
 });
 
 describe('settleFirstSync', () => {
@@ -390,34 +419,34 @@ describe('engine door', () => {
 
   it('does not let a look run while a round is still going', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
 
     const order: string[] = [];
-    let releaseRound: (value: unknown) => void = () => {};
+    let releaseSettle: (value: unknown) => void = () => {};
     const send = vi.fn().mockImplementationOnce(async () => {
-      order.push('round started');
+      order.push('settle started');
       await new Promise((resolve) => {
-        releaseRound = resolve;
+        releaseSettle = resolve;
       });
-      order.push('round finished');
+      order.push('settle finished');
       return { serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
     });
 
-    const round = syncOnce({ send, repo });
+    const settle = settleFirstSync('upload-mine', { send, repo });
     const look = inspectFirstSync({ send, repo }).then((result) => {
       order.push('look done');
       return result;
     });
 
-    // Wait for the round to be inside `send`, not for ten milliseconds to pass:
+    // Wait for the settle to be inside `send`, not for ten milliseconds to pass:
     // a sleep proves the look was slower, not that it was held.
-    await vi.waitFor(() => expect(order).toEqual(['round started']));
+    await vi.waitFor(() => expect(order).toEqual(['settle started']));
     await Promise.resolve();
-    expect(order).toEqual(['round started']);
+    expect(order).toEqual(['settle started']);
 
-    releaseRound(undefined);
-    const [, lookResult] = await Promise.all([round, look]);
-    expect(order).toEqual(['round started', 'round finished', 'look done']);
+    releaseSettle(undefined);
+    const [, lookResult] = await Promise.all([settle, look]);
+    expect(order).toEqual(['settle started', 'settle finished', 'look done']);
     expect(lookResult).toEqual({ kind: 'already-joined' });
     expect(send).toHaveBeenCalledTimes(1);
   });
@@ -486,21 +515,21 @@ describe('engine door', () => {
 
   it('holds the door across the whole body, not only the network call', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
 
     const order: string[] = [];
     let release: (value: unknown) => void = () => {};
     const slow = vi.fn().mockImplementationOnce(async () => {
-      order.push('round: send');
+      order.push('settle: send');
       await new Promise((resolve) => {
         release = resolve;
       });
       return { serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [] };
     });
 
-    const round = syncOnce({ send: slow, repo });
+    const settle = settleFirstSync('upload-mine', { send: slow, repo });
     // A second operation that never reaches the network at all: if the door
-    // only wrapped `send`, this would sail past while the round is still
+    // only wrapped `send`, this would sail past while the settle is still
     // writing its cursor.
     const look = inspectFirstSync({ send: vi.fn(), repo }).then((result) => {
       order.push('look done');
@@ -508,10 +537,10 @@ describe('engine door', () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(order).toEqual(['round: send']);
+    expect(order).toEqual(['settle: send']);
 
     release(undefined);
-    await Promise.all([round, look]);
-    expect(order).toEqual(['round: send', 'look done']);
+    await Promise.all([settle, look]);
+    expect(order).toEqual(['settle: send', 'look done']);
   });
 });
