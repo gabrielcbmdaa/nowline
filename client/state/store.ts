@@ -3,7 +3,7 @@ import { toDateKey } from '../domain/dates';
 import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import { repository } from '../storage/repository';
-import { syncOnce } from '../storage/sync';
+import { inspectFirstSync, settleFirstSync, syncOnce } from '../storage/sync';
 
 export type TabId = 'calendar' | 'summary' | 'projects';
 
@@ -17,6 +17,13 @@ export type AppState = {
   now: Date;
   /** The day currently on screen; the add button creates blocks here. */
   visibleDate: string;
+  /**
+   * Which of the three things the app is showing. Not derived on the fly: the
+   * middle one costs a request to work out, and a component that recomputed it
+   * on every render would ask the server on every render.
+   */
+  entry: 'deciding' | 'signed-out' | 'asking-first-sync' | 'ready';
+  firstSync: { local: number; remote: number } | null;
 };
 
 /** Everything fits in memory: a year of blocks is well under a megabyte. */
@@ -28,6 +35,8 @@ let state: AppState = {
   overrides: [],
   now: new Date(),
   visibleDate: toDateKey(new Date()),
+  entry: 'deciding',
+  firstSync: null,
 };
 
 const listeners = new Set<() => void>();
@@ -57,6 +66,33 @@ export async function loadAll(): Promise<void> {
     repository.listOverrides(),
   ]);
   setState({ projects, plans, overrides, loaded: true, now: new Date() });
+}
+
+export async function decideEntry(): Promise<void> {
+  const { token } = await repository.readSyncState();
+  if (token === null) return setState({ entry: 'signed-out', firstSync: null });
+
+  const look = await inspectFirstSync();
+  if (look.kind === 'ask') {
+    return setState({
+      entry: 'asking-first-sync',
+      firstSync: { local: look.local, remote: look.remote },
+    });
+  }
+  if (look.kind === 'already-joined') return setState({ entry: 'ready', firstSync: null });
+  if (look.kind === 'unauthorized') return setState({ entry: 'signed-out', firstSync: null });
+  // `settled` is a recommendation, not a join: it still has to be carried out.
+  if (look.kind === 'settled') {
+    const outcome = await settleFirstSync(look.choice);
+    if (outcome.kind !== 'done') return setState({ entry: 'signed-out', firstSync: null });
+    // `settleFirstSync` writes the rows it downloads and repaints nothing;
+    // that is `syncNow`'s job and this did not go through `syncNow`.
+    await loadAll();
+    return setState({ entry: 'ready', firstSync: null });
+  }
+  // offline / refused: nothing was decided, and pretending otherwise would let
+  // the four wake-ups start syncing a device that never answered the question.
+  setState({ entry: 'signed-out', firstSync: null });
 }
 
 export function setTab(tab: TabId): void {

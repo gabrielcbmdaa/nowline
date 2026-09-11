@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
-vi.mock('../storage/sync', () => ({ syncOnce: vi.fn() }));
+vi.mock('../storage/sync', () => ({
+  inspectFirstSync: vi.fn(),
+  settleFirstSync: vi.fn(),
+  syncOnce: vi.fn(),
+}));
 
 import { syncOnce } from '../storage/sync';
 import { repository } from '../storage/repository';

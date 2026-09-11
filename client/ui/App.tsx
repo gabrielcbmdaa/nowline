@@ -3,7 +3,16 @@ import { minutesSinceMidnight, toDateKey } from '../domain/dates';
 import { floorToQuarterHour } from '../domain/geometry';
 import type { Project } from '../domain/types';
 import { reportError } from '../reportError';
-import { loadAll, setTab, startClock, startSyncing, useAppState } from '../state/store';
+import {
+  decideEntry,
+  loadAll,
+  setTab,
+  startClock,
+  startSyncing,
+  useAppState,
+} from '../state/store';
+import { FirstSyncScreen } from './FirstSyncScreen';
+import { SignInScreen } from './SignInScreen';
 import { Fab } from './Fab';
 import { TabBar } from './TabBar';
 import { CalendarScreen } from './calendar/CalendarScreen';
@@ -40,10 +49,28 @@ export function App() {
    * arrive through.
    */
   function load() {
-    void loadAll().catch((error: unknown) => {
+    void loadAll()
+      .then(() => decideEntry())
+      .catch((error: unknown) => {
+        reportError('Loading the app failed', error);
+        setLoadError(true);
+      });
+  }
+
+  function onSignedIn() {
+    void decideEntry().catch((error: unknown) => {
       reportError('Loading the app failed', error);
       setLoadError(true);
     });
+  }
+
+  function onSettled() {
+    void loadAll()
+      .then(() => decideEntry())
+      .catch((error: unknown) => {
+        reportError('Loading the app failed', error);
+        setLoadError(true);
+      });
   }
 
   useEffect(() => {
@@ -60,7 +87,7 @@ export function App() {
     };
   }, []);
 
-  if (!state.loaded) {
+  if (!state.loaded || state.entry === 'deciding') {
     if (loadError) {
       return (
         <div className="app app--loading">
@@ -78,6 +105,23 @@ export function App() {
       );
     }
     return <div className="app app--loading">Loading…</div>;
+  }
+
+  if (state.entry === 'signed-out') {
+    return <SignInScreen onSignedIn={onSignedIn} />;
+  }
+
+  if (state.entry === 'asking-first-sync') {
+    if (state.firstSync === null) {
+      throw new Error('asking-first-sync without counts');
+    }
+    return (
+      <FirstSyncScreen
+        local={state.firstSync.local}
+        remote={state.firstSync.remote}
+        onSettled={onSettled}
+      />
+    );
   }
 
   /**
