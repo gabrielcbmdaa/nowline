@@ -67,6 +67,9 @@ describe('inspectFirstSync', () => {
     // local may be sent, until the owner has chosen.
     expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
     expect(send.mock.calls[0][2]).toEqual({ projects: [], plans: [], overrides: [] });
+    // Looking must not answer the question for the owner: a `joined: true`
+    // written here would let the next wakeup merge before he chose.
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', cursor: null, joined: false });
   });
 
   it('settles by itself when the cloud is empty', async () => {

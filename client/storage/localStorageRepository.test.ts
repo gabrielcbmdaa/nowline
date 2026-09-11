@@ -1024,6 +1024,68 @@ describe('LocalStorageRepository', () => {
     expect(await repo.listPlans()).toEqual([]);
   });
 
+  it('drops the overrides of a plan whose tombstone came down from the cloud', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    await repo.saveOverride(override('2026-09-03'));
+    await repo.saveOverride({ ...override('2026-09-04'), id: 'o-other', planId: 'p2' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'p1', deletedAt: '2099-01-01T00:00:00.000Z', updatedAt: '2099-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    // The device that deleted p1 dropped p1's overrides and told nobody: an
+    // override has no tombstone of its own. This device has to run the same
+    // cascade, or a running override with no plan to stop it stays behind.
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]');
+    expect(stored.map((row: { id: string }) => row.id)).toEqual(['o-other']);
+    // And it leaves the queue: uploading it would hand the server a live
+    // override for a buried plan, which the next download writes straight back.
+    const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? '{}');
+    expect(pending.overrides).not.toContain('o-2026-09-03');
+  });
+
+  it('drops the overrides that arrive in the same download as the plan\'s tombstone', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    await repo.saveOverride(override('2026-09-03'));
+    await repo.saveOverride({ ...override('2026-09-04'), id: 'o-other', planId: 'p2' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'p1', deletedAt: '2099-01-01T00:00:00.000Z', updatedAt: '2099-01-01T00:00:00.000Z' }],
+      overrides: [{ ...override('2026-09-03'), updatedAt: '2098-01-01T00:00:00.000Z' }],
+    });
+
+    // A catch-up download brings the override from before the deletion and the
+    // tombstone from after it, in one reply; dropping before merging would write
+    // the override back.
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]');
+    expect(stored.map((row: { id: string }) => row.id)).toEqual(['o-other']);
+  });
+
+  it('keeps a plan and its overrides when the tombstone that arrives is older than this device\'s copy', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.saveOverride(override('2026-09-03'));
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'p1', deletedAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    // The newer stamp wins in both directions, and a tombstone that lost the
+    // merge must not run the cascade of a deletion that did not win.
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['p1']);
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]');
+    expect(stored.map((row: { id: string }) => row.id)).toEqual(['o-2026-09-03']);
+  });
+
   it('keeps a copy of everything local before anything is discarded', async () => {
     await repo.saveProject({ ...project, id: 'pr1' });
     await repo.savePlan({ ...plan, id: 'p1' });

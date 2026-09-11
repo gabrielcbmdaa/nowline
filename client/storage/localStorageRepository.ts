@@ -101,7 +101,8 @@ export class LocalStorageRepository implements BlockRepository {
   }
 
   /**
-   * The only place in this class that writes an `updatedAt`.
+   * The only place in this class that **invents** an `updatedAt` for a row this
+   * device has changed.
    *
    * Every row that changes gets a stamp strictly newer than its own previous
    * one. Two writes of a row inside one millisecond used to share a stamp, and
@@ -109,6 +110,11 @@ export class LocalStorageRepository implements BlockRepository {
    * first upload cannot tell the second version from the one it sent. That bit
    * the tombstones first, because deleting used to write `updatedAt` on its
    * own, without ever looking at what the row already carried.
+   *
+   * `ensureMigrated` also writes `updatedAt`, inventing one with `this.now()`
+   * for legacy rows that never had a stamp. `applyFromServer` and
+   * `replaceAllFromServer` keep the stamp that arrived — routing downloads
+   * through `touch` would restamp every row with this device's clock.
    */
   private touch<T extends { id: string; updatedAt: string }>(
     row: T,
@@ -195,13 +201,21 @@ export class LocalStorageRepository implements BlockRepository {
     );
     // An override carries no tombstone of its own: it only exists hanging off a
     // plan, so the plan's tombstone already tells the other device it is gone too.
+    this.dropOverridesOf([id]);
+  }
+
+  /**
+   * An override has no tombstone of its own — it only exists hanging off a plan.
+   * When a plan is buried, its overrides go with it and leave the upload queue.
+   */
+  private dropOverridesOf(planIds: readonly string[]): void {
     const overrides = this.read<BlockOverride>(OVERRIDES_KEY);
     const dropped = overrides
-      .filter((override) => override.planId === id)
+      .filter((override) => planIds.includes(override.planId))
       .map((override) => override.id);
     this.write(
       OVERRIDES_KEY,
-      overrides.filter((override) => override.planId !== id),
+      overrides.filter((override) => !planIds.includes(override.planId)),
     );
     // Unmark after the drop: doing it first would unqueue rows that are still
     // stored if the write then fails.
@@ -394,23 +408,31 @@ export class LocalStorageRepository implements BlockRepository {
     const merge = (
       key: string,
       arriving: readonly SyncRow[],
-    ): void => {
-      if (arriving.length === 0) return;
+    ): readonly string[] => {
+      if (arriving.length === 0) return [];
       const stored = this.read<{ id: string; updatedAt: string }>(key);
       const byId = new Map(stored.map((row) => [row.id, row]));
+      const winningTombstones: string[] = [];
 
       for (const row of arriving) {
         const mine = byId.get(row.id);
         if (mine === undefined || row.updatedAt > mine.updatedAt) {
           byId.set(row.id, row);
+          if (key === PLANS_KEY && row.deletedAt != null) {
+            winningTombstones.push(row.id);
+          }
         }
       }
       this.write(key, [...byId.values()]);
+      return winningTombstones;
     };
 
     merge(PROJECTS_KEY, changes.projects);
-    merge(PLANS_KEY, changes.plans);
+    const buriedPlans = merge(PLANS_KEY, changes.plans);
     merge(OVERRIDES_KEY, changes.overrides);
+    if (buriedPlans.length > 0) {
+      this.dropOverridesOf(buriedPlans);
+    }
   }
 
   /**
