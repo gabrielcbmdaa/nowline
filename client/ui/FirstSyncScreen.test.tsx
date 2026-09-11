@@ -15,7 +15,7 @@ describe('FirstSyncScreen', () => {
   });
 
   it('shows both counts, because the choice is between them', () => {
-    render(<FirstSyncScreen local={34} remote={120} onSettled={vi.fn()} />);
+    render(<FirstSyncScreen local={34} remote={120} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
     // The order matters as much as the numbers: swapped, the owner would read
     // that the cloud holds his 34 and choose accordingly.
     expect(screen.getByText(/this device has 34 .*the cloud has 120/i)).toBeTruthy();
@@ -24,9 +24,9 @@ describe('FirstSyncScreen', () => {
   it('carries out the choice the owner made', async () => {
     const settle = vi.spyOn(sync, 'settleFirstSync').mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
     const onSettled = vi.fn();
-    render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} />);
+    render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} onSignedOut={vi.fn()} />);
 
-    clickButton(/keep mine/i);
+    clickButton(/upload mine/i);
     await vi.waitFor(() => expect(onSettled).toHaveBeenCalled());
 
     expect(settle).toHaveBeenCalledWith('upload-mine');
@@ -35,7 +35,7 @@ describe('FirstSyncScreen', () => {
 
   it('asks the owner to confirm before throwing his own rows away', async () => {
     const settle = vi.spyOn(sync, 'settleFirstSync');
-    render(<FirstSyncScreen local={34} remote={120} onSettled={vi.fn()} />);
+    render(<FirstSyncScreen local={34} remote={120} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
 
     clickButton(/take the cloud/i);
 
@@ -49,9 +49,9 @@ describe('FirstSyncScreen', () => {
   it('stays put and says why when the round did not go through', async () => {
     vi.spyOn(sync, 'settleFirstSync').mockResolvedValue({ kind: 'offline' });
     const onSettled = vi.fn();
-    render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} />);
+    render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} onSignedOut={vi.fn()} />);
 
-    clickButton(/keep mine/i);
+    clickButton(/upload mine/i);
     await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeTruthy());
 
     // Moving on would leave a device that never joined looking like one that
@@ -63,9 +63,9 @@ describe('FirstSyncScreen', () => {
   it('does not send a second choice while the first is being carried out', async () => {
     let release: (value: { kind: 'done'; downloaded: number; stillOwed: number }) => void = () => {};
     const settle = vi.spyOn(sync, 'settleFirstSync').mockReturnValue(new Promise((resolve) => { release = resolve; }));
-    render(<FirstSyncScreen local={34} remote={120} onSettled={vi.fn()} />);
+    render(<FirstSyncScreen local={34} remote={120} onSettled={vi.fn()} onSignedOut={vi.fn()} />);
 
-    clickButton(/keep mine/i);
+    clickButton(/upload mine/i);
 
     // While the choice is being carried out, every button says no — including
     // the one that opens the confirmation, or a "take the cloud" could run
@@ -74,7 +74,7 @@ describe('FirstSyncScreen', () => {
       if (!(button instanceof HTMLButtonElement)) throw new Error('expected a button');
       expect(button.disabled).toBe(true);
     }
-    clickButton(/keep mine|working/i);
+    clickButton(/upload mine|working/i);
     clickButton(/take the cloud/i);
     expect(screen.queryByRole('button', { name: /yes, replace/i })).toBeNull();
     expect(settle).toHaveBeenCalledTimes(1);
@@ -84,7 +84,7 @@ describe('FirstSyncScreen', () => {
   it('replaces mine only after the second tap, and with the right choice', async () => {
     const settle = vi.spyOn(sync, 'settleFirstSync').mockResolvedValue({ kind: 'done', downloaded: 120, stillOwed: 0 });
     const onSettled = vi.fn();
-    render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} />);
+    render(<FirstSyncScreen local={34} remote={120} onSettled={onSettled} onSignedOut={vi.fn()} />);
 
     clickButton(/take the cloud/i);
     clickButton(/yes, replace/i);
@@ -95,5 +95,20 @@ describe('FirstSyncScreen', () => {
     // the opposite.
     expect(settle).toHaveBeenCalledTimes(1);
     expect(settle).toHaveBeenCalledWith('take-the-cloud');
+  });
+
+  it('asks to sign in again when the session expired', async () => {
+    vi.spyOn(sync, 'settleFirstSync').mockResolvedValue({ kind: 'unauthorized' });
+    const onSettled = vi.fn();
+    const onSignedOut = vi.fn();
+    render(
+      <FirstSyncScreen local={34} remote={120} onSettled={onSettled} onSignedOut={onSignedOut} />,
+    );
+
+    clickButton(/upload mine/i);
+    await vi.waitFor(() => expect(onSignedOut).toHaveBeenCalledTimes(1));
+
+    expect(onSettled).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

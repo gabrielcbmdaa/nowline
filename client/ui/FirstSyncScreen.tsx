@@ -1,14 +1,16 @@
 import { useState, type JSX } from 'react';
 import { settleFirstSync, type SyncOutcome } from '../storage/sync';
 
-type Props = { local: number; remote: number; onSettled: () => void };
+type Props = {
+  local: number;
+  remote: number;
+  onSettled: () => void;
+  onSignedOut: () => void;
+};
 
 function outcomeMessage(outcome: SyncOutcome): string {
   if (outcome.kind === 'offline') {
     return 'No answer from the server. Check your connection.';
-  }
-  if (outcome.kind === 'unauthorized') {
-    return 'The session expired. Sign in again.';
   }
   if (outcome.kind === 'refused') {
     if (outcome.status === 429) {
@@ -25,7 +27,7 @@ function outcomeMessage(outcome: SyncOutcome): string {
   return 'Something went wrong.';
 }
 
-export function FirstSyncScreen({ local, remote, onSettled }: Props): JSX.Element {
+export function FirstSyncScreen({ local, remote, onSettled, onSignedOut }: Props): JSX.Element {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmReplace, setConfirmReplace] = useState(false);
@@ -42,6 +44,10 @@ export function FirstSyncScreen({ local, remote, onSettled }: Props): JSX.Elemen
         onSettled();
         return;
       }
+      if (outcome.kind === 'unauthorized') {
+        onSignedOut();
+        return;
+      }
       setError(outcomeMessage(outcome));
     } finally {
       setSubmitting(false);
@@ -53,6 +59,10 @@ export function FirstSyncScreen({ local, remote, onSettled }: Props): JSX.Elemen
       <h1 className="sheet__title">Two copies of your data</h1>
       <p>
         This device has {local} unsynced blocks. The cloud has {remote}.
+      </p>
+      <p>
+        Upload mine adds this device&apos;s blocks to the cloud. Take the cloud replaces them with
+        the cloud&apos;s.
       </p>
 
       {error && (
@@ -70,7 +80,7 @@ export function FirstSyncScreen({ local, remote, onSettled }: Props): JSX.Elemen
             void carryOut('upload-mine');
           }}
         >
-          {submitting ? 'Working' : 'Keep mine'}
+          {submitting ? 'Working' : 'Upload mine'}
         </button>
 
         {confirmReplace ? (

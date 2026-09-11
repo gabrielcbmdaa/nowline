@@ -64,15 +64,6 @@ export function App() {
     });
   }
 
-  function onSettled() {
-    void loadAll()
-      .then(() => decideEntry())
-      .catch((error: unknown) => {
-        reportError('Loading the app failed', error);
-        setLoadError(true);
-      });
-  }
-
   useEffect(() => {
     load();
     // Two things that outlive a render and have to be stopped together: the
@@ -119,7 +110,8 @@ export function App() {
       <FirstSyncScreen
         local={state.firstSync.local}
         remote={state.firstSync.remote}
-        onSettled={onSettled}
+        onSettled={load}
+        onSignedOut={onSignedIn}
       />
     );
   }
