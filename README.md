@@ -13,7 +13,7 @@ Requires [pnpm](https://pnpm.io). npm and yarn are not used here.
 ```bash
 pnpm install
 pnpm dev          # http://localhost:5124, or --host to open it on a phone
-pnpm test         # 127 unit tests
+pnpm test         # unit tests
 pnpm build        # type-check, then a production build
 ```
 
@@ -23,10 +23,17 @@ Live at <https://nowline.gabrielcbmd.com>.
 
 A push to `main` publishes it. GitHub Actions installs, runs the whole suite and
 builds; only if all three pass does a second job copy `dist/` to the server over
-rsync. The server compiles nothing and runs no process of its own — nginx serves
-the built files. Host, user and path live in repository secrets, not here.
+rsync. That workflow only publishes `dist/` — nginx serves the built files — but
+the app also calls `/api/auth/login` and `/api/sync` on its own origin, so it
+needs the `server/` process behind `location /api/` too (phase 4 deploys that).
+Host, user and path live in repository secrets, not here.
 
 ## How it works
+
+Everything is local first: the calendar reads and writes on this device, and a
+round trip to the server only agrees the two copies. One account holds the rows;
+a device signs in once, and if both sides already have data it asks once what to
+do with the two copies.
 
 Three tabs: **Calendar**, **Summary**, **Projects**.
 
@@ -163,7 +170,7 @@ Vite and Vitest.
 ## Known limitations
 
 - **Two open tabs can both start a timer.** Narrowed, not eliminated; needs the server.
-- **The calendar strip has no rendering tests.** Of the 127, the ones that render cover a
+- **The calendar strip has no rendering tests.** The ones that render cover a
   block and the two sheets; the strip itself — scrolling, the sliding window, a drag from
   pointer to stored override — was verified by hand in a browser, which is not repeatable
   in CI. This is the most valuable thing left to add.
