@@ -48,43 +48,48 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
   }
 
   return (
-    <form aria-label="Sign in" onSubmit={(event) => { void handleSubmit(event); }}>
-      <label className="field" htmlFor="sign-in-username">
-        <span className="field__label">Username</span>
-      </label>
-      <input
-        id="sign-in-username"
-        className="field__input"
-        value={username}
-        autoComplete="username"
-        onChange={(event) => {
-          setUsername(event.target.value);
-        }}
-      />
+    <div className="gate">
+      <h1 className="sheet__title">Sign in</h1>
+      <form aria-label="Sign in" onSubmit={(event) => { void handleSubmit(event); }}>
+        <label className="field" htmlFor="sign-in-username">
+          <span className="field__label">Username</span>
+          <input
+            id="sign-in-username"
+            className="field__input"
+            value={username}
+            autoComplete="username"
+            onChange={(event) => {
+              setUsername(event.target.value);
+            }}
+          />
+        </label>
 
-      <label className="field" htmlFor="sign-in-password">
-        <span className="field__label">Password</span>
-      </label>
-      <input
-        id="sign-in-password"
-        className="field__input"
-        type="password"
-        value={password}
-        autoComplete="current-password"
-        onChange={(event) => {
-          setPassword(event.target.value);
-        }}
-      />
+        <label className="field" htmlFor="sign-in-password">
+          <span className="field__label">Password</span>
+          <input
+            id="sign-in-password"
+            className="field__input"
+            type="password"
+            value={password}
+            autoComplete="current-password"
+            onChange={(event) => {
+              setPassword(event.target.value);
+            }}
+          />
+        </label>
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
 
-      <button className="button button--primary" type="submit" disabled={submitting}>
-        {submitting ? 'Signing in' : 'Sign in'}
-      </button>
-    </form>
+        <div className="gate__actions">
+          <button className="button button--primary" type="submit" disabled={submitting}>
+            {submitting ? 'Signing in' : 'Sign in'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

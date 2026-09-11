@@ -49,7 +49,8 @@ export function FirstSyncScreen({ local, remote, onSettled }: Props): JSX.Elemen
   }
 
   return (
-    <div>
+    <div className="gate">
+      <h1 className="sheet__title">Two copies of your data</h1>
       <p>
         This device has {local} unsynced blocks. The cloud has {remote}.
       </p>
@@ -60,40 +61,42 @@ export function FirstSyncScreen({ local, remote, onSettled }: Props): JSX.Elemen
         </p>
       )}
 
-      <button
-        className="button button--primary"
-        type="button"
-        disabled={submitting}
-        onClick={() => {
-          void carryOut('upload-mine');
-        }}
-      >
-        {submitting ? 'Working' : 'Keep mine'}
-      </button>
+      <div className="gate__actions">
+        <button
+          className="button button--primary"
+          type="button"
+          disabled={submitting}
+          onClick={() => {
+            void carryOut('upload-mine');
+          }}
+        >
+          {submitting ? 'Working' : 'Keep mine'}
+        </button>
 
-      {confirmReplace ? (
-        <button
-          className="button button--danger"
-          type="button"
-          disabled={submitting}
-          onClick={() => {
-            void carryOut('take-the-cloud');
-          }}
-        >
-          {submitting ? 'Working' : 'Yes, replace mine'}
-        </button>
-      ) : (
-        <button
-          className="button"
-          type="button"
-          disabled={submitting}
-          onClick={() => {
-            setConfirmReplace(true);
-          }}
-        >
-          Take the cloud
-        </button>
-      )}
+        {confirmReplace ? (
+          <button
+            className="button button--danger"
+            type="button"
+            disabled={submitting}
+            onClick={() => {
+              void carryOut('take-the-cloud');
+            }}
+          >
+            {submitting ? 'Working' : 'Yes, replace mine'}
+          </button>
+        ) : (
+          <button
+            className="button"
+            type="button"
+            disabled={submitting}
+            onClick={() => {
+              setConfirmReplace(true);
+            }}
+          >
+            Take the cloud
+          </button>
+        )}
+      </div>
     </div>
   );
 }
