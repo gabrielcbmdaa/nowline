@@ -53,4 +53,22 @@ describe('the server', () => {
     expect(reply.status).toBe(404);
     expect(reply.contentType).toContain('application/json');
   });
+
+  it('answers a broken body in JSON, without saying what it is made of', async () => {
+    const db = await withTestDb();
+    const reply = await call(createApp(db), '/api/auth/login', {
+      method: 'POST',
+      rawBody: '{"username": "gabriel" "password": "whatever"}',
+    });
+
+    // Express's own handler answers HTML with the whole stack: absolute paths,
+    // the system user's name, and the exact version of every dependency the
+    // error passed through. Behind nginx that is a list of which known
+    // vulnerabilities to try, handed to anyone who sends rubbish to the door.
+    expect(reply.status).toBe(400);
+    expect(reply.contentType).toContain('application/json');
+    expect(reply.text).not.toMatch(/node_modules/);
+    expect(reply.text).not.toMatch(/at .*\(/);
+    expect(reply.body).toEqual({ error: 'bad request' });
+  });
 });

@@ -25,6 +25,17 @@ export function createApp(db: Db): express.Express {
     response.status(404).json({ error: 'not found' });
   });
 
+  // Four parameters on purpose: that is how Express tells an error handler from
+  // ordinary middleware. Drop `next` and this silently stops catching anything.
+  app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+    // A malformed body is the caller's fault and says nothing worth reporting.
+    // Anything else is this server breaking, and the owner should see it in the
+    // process log — where it is his, not in the reply, where it is everyone's.
+    const status = error instanceof SyntaxError ? 400 : 500;
+    if (status === 500) console.error(error);
+    response.status(status).json({ error: status === 400 ? 'bad request' : 'server error' });
+  });
+
   return app;
 }
 

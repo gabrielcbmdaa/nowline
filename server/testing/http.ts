@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import type { AddressInfo } from 'node:net';
 
-export type Reply = { status: number; contentType: string; body: unknown };
+export type Reply = { status: number; contentType: string; body: unknown; text: string };
 
 /**
  * Binds port 0 so the operating system picks a free one: a fixed port makes
@@ -12,7 +12,7 @@ export type Reply = { status: number; contentType: string; body: unknown };
 export async function call(
   app: Express,
   path: string,
-  init?: { method?: string; body?: unknown; token?: string },
+  init?: { method?: string; body?: unknown; token?: string; rawBody?: string },
 ): Promise<Reply> {
   const server = app.listen(0);
   try {
@@ -30,13 +30,25 @@ export async function call(
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: init?.method ?? 'GET',
       headers,
-      body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+      // `rawBody` sends exactly the string given, without JSON.stringify: that is
+      // the only way to test what the server does with a body that is not valid JSON.
+      body: init?.rawBody ?? (init?.body === undefined ? undefined : JSON.stringify(init.body)),
     });
     const text = await response.text();
+    let body: unknown = null;
+    try {
+      body = text === '' ? null : JSON.parse(text);
+    } catch {
+      // A reply that is not JSON is a finding, not a crash in the helper: the
+      // test that asked for JSON must fail on its own assertion, showing the
+      // HTML it got, instead of dying here with a parse error.
+      body = null;
+    }
     return {
       status: response.status,
       contentType: response.headers.get('content-type') ?? '',
-      body: text ? JSON.parse(text) : null,
+      body,
+      text,
     };
   } finally {
     await new Promise((resolve) => server.close(resolve));

@@ -15,7 +15,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
  */
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'docs/**', '.superpowers/**', 'eslint.config.js', 'vite.config.ts'],
+    ignores: ['dist/**', 'dist-server/**', 'node_modules/**', 'docs/**', '.superpowers/**', 'eslint.config.js', 'vite.config.ts'],
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -61,6 +61,11 @@ export default tseslint.config(
 
       // 17 hits, every one a number in a template: `listening on ${port}`.
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+
+      // Express recognises an error handler by its arity: four parameters or it
+      // is ordinary middleware. The fourth cannot be used, and the rule only
+      // forgives an unused argument when it is not the last one.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
   {
