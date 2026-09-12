@@ -1,6 +1,11 @@
 node_modules/
 dist/
 dist-server/
+# The VPS keeps its MONGO_URL here, password and all, and this repository is
+# public. `git reset --hard` on the deploy leaves an untracked file alone, so
+# the only way it could ever be committed is somebody running `git add .` in
+# that checkout — which this line makes harmless.
+.env
 docs/
 .claude/
 .superpowers/
