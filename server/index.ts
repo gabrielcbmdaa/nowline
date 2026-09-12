@@ -1,6 +1,5 @@
 import express from 'express';
 import type { Db } from 'mongodb';
-import { openDatabase } from './db.js';
 import { loginRoute } from './routes/login.js';
 import { syncRoute } from './routes/sync.js';
 
@@ -48,29 +47,4 @@ export function readConfig(): { url: string; dbName: string; port: number } {
     throw new Error('Set MONGO_URL and MONGO_DB before starting the server');
   }
   return { url, dbName, port: Number(process.env.PORT ?? 3001) };
-}
-
-// Only when run directly, never when imported by a test.
-if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
-  try {
-    const { url, dbName, port } = readConfig();
-    openDatabase(url, dbName)
-      .then((db) => {
-        // 127.0.0.1 on purpose, as the spec's deployment section requires:
-        // nginx is the only thing that talks to the world, and a process that
-        // binds every interface is reachable the moment a firewall rule moves.
-        createApp(db).listen(port, '127.0.0.1', () => {
-          console.log(`nowline server listening on 127.0.0.1:${port}`);
-        });
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`Failed to start server: ${message}`);
-        process.exit(1);
-      });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
-    process.exit(1);
-  }
 }
