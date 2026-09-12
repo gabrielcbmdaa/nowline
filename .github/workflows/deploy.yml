@@ -86,7 +86,11 @@ jobs:
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash -eu <<'REMOTE'
             cd ~/nowline
             git fetch origin
-            git reset --hard origin/main
+            # -B, not `reset --hard`: reset moves whichever branch happens to be
+            # checked out, so a checkout left on some other branch would be the
+            # one updated, and the process would keep serving old code with no
+            # error anywhere. This puts the checkout on main either way.
+            git checkout -B main origin/main
             # --frozen-lockfile matches the test job, so that job is a real
             # rehearsal of this install.
             pnpm install --frozen-lockfile
