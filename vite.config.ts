@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { configDefaults } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react()],
@@ -23,6 +24,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Compiled emit is not the suite, which is why dist/ is already excluded
+    // by default. dist-server/ is the same kind of folder and is not.
+    exclude: [...configDefaults.exclude, 'dist-server/**'],
     /**
      * Pinned so date tests mean the same thing on every machine. Madrid because it
      * changes its clocks and the developer's zone, La Paz, has not since 1932: with

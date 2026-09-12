@@ -8,6 +8,7 @@
     "dev": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "eslint . && tsc --noEmit && tsc --noEmit -p tsconfig.server.json && vite build",
+    "build:server": "tsc -p tsconfig.server.json",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
