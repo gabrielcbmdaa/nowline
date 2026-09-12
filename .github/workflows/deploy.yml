@@ -76,7 +76,29 @@ jobs:
           printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/known_hosts ~/.ssh/deploy_key
 
-      # The server runs nothing of its own: nginx already serves this directory.
+      # The server first, the statics second, as the design's deployment section
+      # requires: the other way round leaves a new client asking /api/sync of a
+      # server that does not know what that is. This way the worst case is a new
+      # server answering old clients, which never call it.
+      - name: Update the server
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash -eu <<'REMOTE'
+            cd ~/nowline
+            git fetch origin
+            git reset --hard origin/main
+            # --frozen-lockfile matches the test job, so that job is a real
+            # rehearsal of this install.
+            pnpm install --frozen-lockfile
+            # Only the server compiles here. The client was built on the runner
+            # and arrives as files: this machine has 954 MB and Vite is the most
+            # expensive thing that could run on it.
+            pnpm build:server
+            pm2 restart nowline
+          REMOTE
+
+      # Copies dist/ (the client static files) onto the VPS. The Node process
+      # is the previous step; this one does not start or restart it.
       - name: Publish
         run: |
           rsync -az --delete \

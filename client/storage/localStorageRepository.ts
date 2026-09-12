@@ -1,12 +1,16 @@
 import { compareDateKeys } from '../domain/dates';
 import { reportWarning } from '../reportError';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
+import type { SyncChanges, SyncRow } from './apiClient';
 import type { BlockRepository } from './repository';
 
 const PROJECTS_KEY = 'nowline.projects.v2';
 const PLANS_KEY = 'nowline.plans.v2';
 const OVERRIDES_KEY = 'nowline.overrides.v2';
 const PENDING_KEY = 'nowline.pending.v1';
+const SYNC_KEY = 'nowline.sync.v1';
+
+export type SyncState = { token: string | null; cursor: string | null; joined: boolean };
 
 export type PendingIds = {
   projects: string[];
@@ -14,7 +18,15 @@ export type PendingIds = {
   overrides: string[];
 };
 
+export type SentRow = { id: string; updatedAt: string };
+export type SentRows = { projects: SentRow[]; plans: SentRow[]; overrides: SentRow[] };
+
 const nothingPending = (): PendingIds => ({ projects: [], plans: [], overrides: [] });
+
+/** One millisecond later, in the same ISO shape the rest of the app compares as text. */
+function nextInstantAfter(stamp: string): string {
+  return new Date(Date.parse(stamp) + 1).toISOString();
+}
 
 /**
  * The keys this app was born with, under the name it had before Nowline. They
@@ -76,10 +88,8 @@ export class LocalStorageRepository implements BlockRepository {
         to,
         legacy.map((row) => {
           if (to === OVERRIDES_KEY) {
-            const { deletedAt: _tombstone, ...withoutTombstone } = row as {
-              id: string;
-              deletedAt?: unknown;
-            };
+            const withoutTombstone = { ...(row as { id: string; deletedAt?: unknown }) };
+            delete withoutTombstone.deletedAt;
             return { ...withoutTombstone, updatedAt: stampedAt };
           }
           return { deletedAt: null, ...row, updatedAt: stampedAt };
@@ -90,8 +100,34 @@ export class LocalStorageRepository implements BlockRepository {
     this.migrated = true;
   }
 
-  private stamp<T>(row: T): T & { updatedAt: string } {
-    return { ...row, updatedAt: this.now().toISOString() };
+  /**
+   * The only place in this class that **invents** an `updatedAt` for a row this
+   * device has changed.
+   *
+   * Every row that changes gets a stamp strictly newer than its own previous
+   * one. Two writes of a row inside one millisecond used to share a stamp, and
+   * a shared stamp is a change that never travels: the confirmation of the
+   * first upload cannot tell the second version from the one it sent. That bit
+   * the tombstones first, because deleting used to write `updatedAt` on its
+   * own, without ever looking at what the row already carried.
+   *
+   * `ensureMigrated` also writes `updatedAt`, inventing one with `this.now()`
+   * for legacy rows that never had a stamp. `applyFromServer` and
+   * `replaceAllFromServer` keep the stamp that arrived — routing downloads
+   * through `touch` would restamp every row with this device's clock.
+   */
+  private touch<T extends { id: string; updatedAt: string }>(
+    row: T,
+    existing: readonly T[],
+    changes: Partial<T> = {},
+  ): T {
+    const now = this.now().toISOString();
+    const previous = existing.find((stored) => stored.id === row.id)?.updatedAt;
+    return {
+      ...row,
+      ...changes,
+      updatedAt: previous !== undefined && now <= previous ? nextInstantAfter(previous) : now,
+    };
   }
 
   async listProjects(): Promise<Project[]> {
@@ -104,16 +140,17 @@ export class LocalStorageRepository implements BlockRepository {
     // Queue first: if the row write then fills storage, the id is still owed.
     // The other way around persists a change the server never hears about.
     this.markPending('projects', project.id);
-    this.write(PROJECTS_KEY, upsert(this.read<Project>(PROJECTS_KEY), this.stamp(project)));
+    const rows = this.read<Project>(PROJECTS_KEY);
+    this.write(PROJECTS_KEY, upsert(rows, this.touch(project, rows)));
   }
 
   async deleteProject(id: string): Promise<void> {
     this.ensureMigrated();
-    const at = this.now().toISOString();
 
     // Blocks outlive their project; they simply lose their colour. Each one is a
     // row that changed, so each one needs its own new updatedAt: without it the
     // other device would hand the colour straight back.
+    const projects = this.read<Project>(PROJECTS_KEY);
     const plans = this.read<BlockPlan>(PLANS_KEY);
     this.markPending('projects', id);
     for (const row of plans) {
@@ -122,14 +159,16 @@ export class LocalStorageRepository implements BlockRepository {
 
     this.write(
       PROJECTS_KEY,
-      this.read<Project>(PROJECTS_KEY).map((row) =>
-        row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
+      projects.map((row) =>
+        row.id === id
+          ? this.touch(row, projects, { deletedAt: this.now().toISOString() })
+          : row,
       ),
     );
     this.write(
       PLANS_KEY,
       plans.map((row) =>
-        row.projectId === id ? { ...row, projectId: null, updatedAt: at } : row,
+        row.projectId === id ? this.touch(row, plans, { projectId: null }) : row,
       ),
     );
   }
@@ -142,30 +181,41 @@ export class LocalStorageRepository implements BlockRepository {
   async savePlan(plan: BlockPlan): Promise<void> {
     this.ensureMigrated();
     this.markPending('plans', plan.id);
-    this.write(PLANS_KEY, upsert(this.read<BlockPlan>(PLANS_KEY), this.stamp(plan)));
+    const rows = this.read<BlockPlan>(PLANS_KEY);
+    this.write(PLANS_KEY, upsert(rows, this.touch(plan, rows)));
   }
 
   async deletePlan(id: string): Promise<void> {
     this.ensureMigrated();
-    const at = this.now().toISOString();
 
     this.markPending('plans', id);
 
+    const rows = this.read<BlockPlan>(PLANS_KEY);
     this.write(
       PLANS_KEY,
-      this.read<BlockPlan>(PLANS_KEY).map((row) =>
-        row.id === id ? { ...row, deletedAt: at, updatedAt: at } : row,
+      rows.map((row) =>
+        row.id === id
+          ? this.touch(row, rows, { deletedAt: this.now().toISOString() })
+          : row,
       ),
     );
     // An override carries no tombstone of its own: it only exists hanging off a
     // plan, so the plan's tombstone already tells the other device it is gone too.
+    this.dropOverridesOf([id]);
+  }
+
+  /**
+   * An override has no tombstone of its own — it only exists hanging off a plan.
+   * When a plan is buried, its overrides go with it and leave the upload queue.
+   */
+  private dropOverridesOf(planIds: readonly string[]): void {
     const overrides = this.read<BlockOverride>(OVERRIDES_KEY);
     const dropped = overrides
-      .filter((override) => override.planId === id)
+      .filter((override) => planIds.includes(override.planId))
       .map((override) => override.id);
     this.write(
       OVERRIDES_KEY,
-      overrides.filter((override) => override.planId !== id),
+      overrides.filter((override) => !planIds.includes(override.planId)),
     );
     // Unmark after the drop: doing it first would unqueue rows that are still
     // stored if the write then fails.
@@ -186,10 +236,8 @@ export class LocalStorageRepository implements BlockRepository {
   async saveOverride(override: BlockOverride): Promise<void> {
     this.ensureMigrated();
     this.markPending('overrides', override.id);
-    this.write(
-      OVERRIDES_KEY,
-      upsert(this.read<BlockOverride>(OVERRIDES_KEY), this.stamp(override)),
-    );
+    const rows = this.read<BlockOverride>(OVERRIDES_KEY);
+    this.write(OVERRIDES_KEY, upsert(rows, this.touch(override, rows)));
   }
 
   async deleteOverride(id: string): Promise<void> {
@@ -284,11 +332,195 @@ export class LocalStorageRepository implements BlockRepository {
     return this.readPending();
   }
 
+  /**
+   * Rows by id, tombstones included. The three public list methods hide what
+   * carries a `deletedAt` because the calendar must not draw it; the server
+   * has to hear about it, or the other device hands the row straight back.
+   */
+  async rowsToUpload(pending: PendingIds): Promise<SyncChanges> {
+    this.ensureMigrated();
+    const pick = <T extends { id: string }>(key: string, ids: readonly string[]): T[] => {
+      if (ids.length === 0) return [];
+      const byId = new Map(this.read<T>(key).map((row) => [row.id, row]));
+      // A queue can outlive its row; an id with nothing behind it is dropped
+      // rather than sent as a hole.
+      return ids.map((id) => byId.get(id)).filter((row): row is T => row !== undefined);
+    };
+
+    return {
+      projects: pick<Project>(PROJECTS_KEY, pending.projects),
+      plans: pick<BlockPlan>(PLANS_KEY, pending.plans),
+      overrides: pick<BlockOverride>(OVERRIDES_KEY, pending.overrides),
+    };
+  }
+
+  async readSyncState(): Promise<SyncState> {
+    this.ensureMigrated();
+    try {
+      const raw = localStorage.getItem(SYNC_KEY);
+      if (raw === null) return { token: null, cursor: null, joined: false };
+
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) {
+        reportWarning(`Stored "${SYNC_KEY}" is not an object`, parsed);
+        return { token: null, cursor: null, joined: false };
+      }
+
+      const row = parsed as { token?: unknown; cursor?: unknown; joined?: unknown };
+      // Read the two halves apart. A damaged cursor costs one full download;
+      // dropping a good token with it costs the owner a password prompt for
+      // nothing, and those are not the same price.
+      return {
+        token: typeof row.token === 'string' ? row.token : null,
+        cursor: typeof row.cursor === 'string' ? row.cursor : null,
+        joined: row.joined === true,
+      };
+    } catch (error) {
+      reportWarning(`Reading "${SYNC_KEY}" from storage failed`, error);
+      return { token: null, cursor: null, joined: false };
+    }
+  }
+
+  async writeSyncState(next: SyncState): Promise<void> {
+    this.ensureMigrated();
+    localStorage.setItem(SYNC_KEY, JSON.stringify(next));
+  }
+
   async clearPending(ids: PendingIds): Promise<void> {
     this.ensureMigrated();
     this.unmarkPending('projects', ids.projects);
     this.unmarkPending('plans', ids.plans);
     this.unmarkPending('overrides', ids.overrides);
+  }
+
+  /**
+   * Write rows exactly as the server sent them: no new stamp, no queue entry.
+   *
+   * Using `savePlan` here would do both — it stamps with this device's clock
+   * and marks the id as owed — and the two devices would then trade the same
+   * row for ever, each one convinced it owes the other something.
+   *
+   * The newer `updatedAt` wins, which is the same rule the server applies. A
+   * row this device edited while the answer was in flight keeps its edit.
+   */
+  async applyFromServer(changes: SyncChanges): Promise<void> {
+    this.ensureMigrated();
+    const merge = (
+      key: string,
+      arriving: readonly SyncRow[],
+    ): readonly string[] => {
+      if (arriving.length === 0) return [];
+      const stored = this.read<{ id: string; updatedAt: string }>(key);
+      const byId = new Map(stored.map((row) => [row.id, row]));
+      const winningTombstones: string[] = [];
+
+      for (const row of arriving) {
+        const mine = byId.get(row.id);
+        if (mine === undefined || row.updatedAt > mine.updatedAt) {
+          byId.set(row.id, row);
+          if (key === PLANS_KEY && row.deletedAt != null) {
+            winningTombstones.push(row.id);
+          }
+        }
+      }
+      this.write(key, [...byId.values()]);
+      return winningTombstones;
+    };
+
+    merge(PROJECTS_KEY, changes.projects);
+    const buriedPlans = merge(PLANS_KEY, changes.plans);
+    merge(OVERRIDES_KEY, changes.overrides);
+    if (buriedPlans.length > 0) {
+      this.dropOverridesOf(buriedPlans);
+    }
+  }
+
+  /**
+   * Drop from the queue only the ids whose row still carries the `updatedAt`
+   * that was sent. The queue holds ids and nothing else, so "forget p1" cannot
+   * express "forget p1 only if it has not changed since I read it" — and the
+   * gap between reading a row and confirming it is exactly one network round
+   * trip wide, which is long enough for the owner to type.
+   *
+   * Read and write happen here, in one synchronous stretch, for the same
+   * reason the server decides the winner inside the query: two steps with a
+   * gap between them are two chances to lose the second one.
+   */
+  async clearPendingUnchanged(sent: SentRows): Promise<void> {
+    this.ensureMigrated();
+    const stillTheSame = (
+      key: string,
+      rows: readonly SentRow[],
+    ): string[] => {
+      if (rows.length === 0) return [];
+      const byId = new Map(
+        this.read<{ id: string; updatedAt: string }>(key).map((row) => [row.id, row]),
+      );
+      return rows
+        .filter((row) => {
+          const stored = byId.get(row.id);
+          // A row that vanished is nothing this device still owes.
+          return stored === undefined || stored.updatedAt === row.updatedAt;
+        })
+        .map((row) => row.id);
+    };
+
+    this.unmarkPending('projects', stillTheSame(PROJECTS_KEY, sent.projects));
+    this.unmarkPending('plans', stillTheSame(PLANS_KEY, sent.plans));
+    this.unmarkPending('overrides', stillTheSame(OVERRIDES_KEY, sent.overrides));
+  }
+
+  /** Every row this device holds, tombstones included, counted for the first-sync question. */
+  async countLocalRows(): Promise<number> {
+    this.ensureMigrated();
+    return (
+      this.read<Project>(PROJECTS_KEY).length +
+      this.read<BlockPlan>(PLANS_KEY).length +
+      this.read<BlockOverride>(OVERRIDES_KEY).length
+    );
+  }
+
+  /**
+   * A copy of everything local, under a key nothing reads. Nothing in this app
+   * destroys the owner's data on a choice made once: the real data lives on a
+   * phone, where there is no console to dig it back out of.
+   */
+  async keepDiscardedCopy(stamp: string): Promise<void> {
+    this.ensureMigrated();
+    // Never overwrite: two choices on one day would otherwise leave one key,
+    // and the copy that mattered is the first one. Nothing reads these; they
+    // exist for the day somebody has to go and get their data back by hand.
+    let key = `nowline.discarded.${stamp}`;
+    for (let attempt = 2; localStorage.getItem(key) !== null; attempt += 1) {
+      key = `nowline.discarded.${stamp}.${attempt}`;
+    }
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        projects: this.read<Project>(PROJECTS_KEY),
+        plans: this.read<BlockPlan>(PLANS_KEY),
+        overrides: this.read<BlockOverride>(OVERRIDES_KEY),
+      }),
+    );
+  }
+
+  /** Every row this device holds becomes owed: what a device joining for the first time sends. */
+  async queueEverything(): Promise<void> {
+    this.ensureMigrated();
+    localStorage.setItem(PENDING_KEY, JSON.stringify(this.everythingPending()));
+  }
+
+  /**
+   * Throw away what is here and keep what arrived. Only the first-sync screen
+   * calls this, and only after `keepDiscardedCopy`; the queue is emptied too,
+   * because nothing local is owed any more.
+   */
+  async replaceAllFromServer(changes: SyncChanges): Promise<void> {
+    this.ensureMigrated();
+    this.write(PROJECTS_KEY, changes.projects);
+    this.write(PLANS_KEY, changes.plans);
+    this.write(OVERRIDES_KEY, changes.overrides);
+    localStorage.setItem(PENDING_KEY, JSON.stringify(nothingPending()));
   }
 
   private read<T>(key: string): T[] {
@@ -310,7 +542,7 @@ export class LocalStorageRepository implements BlockRepository {
     }
   }
 
-  private write<T>(key: string, rows: T[]): void {
+  private write(key: string, rows: unknown[]): void {
     localStorage.setItem(key, JSON.stringify(rows));
   }
 }

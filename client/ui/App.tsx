@@ -3,7 +3,16 @@ import { minutesSinceMidnight, toDateKey } from '../domain/dates';
 import { floorToQuarterHour } from '../domain/geometry';
 import type { Project } from '../domain/types';
 import { reportError } from '../reportError';
-import { loadAll, setTab, startClock, useAppState } from '../state/store';
+import {
+  decideEntry,
+  loadAll,
+  setTab,
+  startClock,
+  startSyncing,
+  useAppState,
+} from '../state/store';
+import { FirstSyncScreen } from './FirstSyncScreen';
+import { SignInScreen } from './SignInScreen';
 import { Fab } from './Fab';
 import { TabBar } from './TabBar';
 import { CalendarScreen } from './calendar/CalendarScreen';
@@ -40,7 +49,16 @@ export function App() {
    * arrive through.
    */
   function load() {
-    void loadAll().catch((error) => {
+    void loadAll()
+      .then(() => decideEntry())
+      .catch((error: unknown) => {
+        reportError('Loading the app failed', error);
+        setLoadError(true);
+      });
+  }
+
+  function onSignedIn() {
+    void decideEntry().catch((error: unknown) => {
       reportError('Loading the app failed', error);
       setLoadError(true);
     });
@@ -48,10 +66,19 @@ export function App() {
 
   useEffect(() => {
     load();
-    return startClock();
+    // Two things that outlive a render and have to be stopped together: the
+    // clock that makes running blocks grow, and the rounds that agree with the
+    // server. A `startSyncing` nobody calls is three of its four moments never
+    // happening in the app people actually open.
+    const stopClock = startClock();
+    const stopSyncing = startSyncing();
+    return () => {
+      stopClock();
+      stopSyncing();
+    };
   }, []);
 
-  if (!state.loaded) {
+  if (!state.loaded || state.entry === 'deciding') {
     if (loadError) {
       return (
         <div className="app app--loading">
@@ -69,6 +96,24 @@ export function App() {
       );
     }
     return <div className="app app--loading">Loading…</div>;
+  }
+
+  if (state.entry === 'signed-out') {
+    return <SignInScreen onSignedIn={onSignedIn} />;
+  }
+
+  if (state.entry === 'asking-first-sync') {
+    if (state.firstSync === null) {
+      throw new Error('asking-first-sync without counts');
+    }
+    return (
+      <FirstSyncScreen
+        local={state.firstSync.local}
+        remote={state.firstSync.remote}
+        onSettled={load}
+        onSignedOut={onSignedIn}
+      />
+    );
   }
 
   /**

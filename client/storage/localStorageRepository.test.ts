@@ -224,6 +224,105 @@ describe('LocalStorageRepository', () => {
     expect(stored.updatedAt).toBe(FROZEN);
   });
 
+  it('does not give a tombstone the same stamp as the row it buries', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.savePlan({ ...plan, id: 'p1' });
+    const alive = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    await repo.deletePlan('p1');
+    const buried = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    // Sharing a stamp means the confirmation of the live version also clears
+    // the tombstone from the queue: the deletion never travels and the block
+    // comes back from the other device.
+    expect(buried > alive).toBe(true);
+    // And the tombstone was actually written: a stamp that moved on a row that
+    // was never buried would satisfy the line above and bury nothing.
+    const row = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0];
+    expect(row.deletedAt).not.toBeNull();
+  });
+
+  it('does not give a project tombstone the same stamp as the project it buries', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.saveProject({ ...project, id: 'health' });
+    const alive = JSON.parse(localStorage.getItem('nowline.projects.v2') ?? '[]')[0].updatedAt;
+
+    await repo.deleteProject('health');
+    const row = JSON.parse(localStorage.getItem('nowline.projects.v2') ?? '[]')[0];
+
+    // The project's own tombstone is a third write this changed, and the plans
+    // that lose their colour do not cover it: reverting this one alone left the
+    // whole file green.
+    expect(row.updatedAt > alive).toBe(true);
+    expect(row.deletedAt).not.toBeNull();
+  });
+
+  it('does not stamp a plan that lost its colour behind its own last change', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.saveProject({ ...project, id: 'health' });
+    await repo.savePlan({ ...plan, id: 'p1', projectId: 'health' });
+    await repo.savePlan({ ...plan, id: 'p1', projectId: 'health', title: 'edited' });
+    const beforeDelete = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    await repo.deleteProject('health');
+    const afterDelete = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    // A stamp behind the row's own last change is a change the other device
+    // will overrule: it hands the colour straight back.
+    expect(afterDelete > beforeDelete).toBe(true);
+    // And the colour is actually gone: a stamp that moved while the plan kept
+    // its project would satisfy the line above and change nothing that matters.
+    expect(JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].projectId).toBeNull();
+  });
+
+  it('never stamps two saves with the same instant', async () => {
+    // Two saves inside one millisecond used to share an updatedAt, and a shared
+    // stamp is a lost edit: the confirmation of the first save sees the second
+    // one as unchanged and drops it from the queue.
+    const repo = new LocalStorageRepository(frozenClock);
+
+    await repo.savePlan({ ...plan, id: 'p1', title: 'first' });
+    const first = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    await repo.savePlan({ ...plan, id: 'p1', title: 'second' });
+    const second = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0].updatedAt;
+
+    expect(second > first).toBe(true);
+  });
+
+  it('compares a row against its own previous stamp, not against its neighbour', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+
+    // Neither row has a previous version, so neither is nudged: two different
+    // rows sharing an instant is harmless, because the comparison that matters
+    // is per row. Looking the previous stamp up by position instead of by id
+    // would push the second one a millisecond into the future for no reason,
+    // and stamps are what decide who wins a merge.
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(stored.map((row: { id: string; updatedAt: string }) => [row.id, row.updatedAt])).toEqual([
+      ['p1', FROZEN],
+      ['p2', FROZEN],
+    ]);
+  });
+
+  it('still uses the real instant when the clock has moved on', async () => {
+    // The nudge is a floor, not an offset: a stamp must not drift ahead of the
+    // clock, or a row from this device outranks a genuinely later one elsewhere.
+    let tick = 0;
+    const movingClock = () => new Date(Date.parse(FROZEN) + tick * 60_000);
+    const repo = new LocalStorageRepository(movingClock);
+
+    await repo.savePlan({ ...plan, id: 'p1' });
+    tick = 5;
+    await repo.savePlan({ ...plan, id: 'p1' });
+
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]')[0];
+    expect(stored.updatedAt).toBe(new Date(Date.parse(FROZEN) + 5 * 60_000).toISOString());
+  });
+
   it('migrates the v1 keys into the v2 keys and leaves v1 untouched', async () => {
     const legacyProject = {
       id: 'health',
@@ -589,6 +688,38 @@ describe('LocalStorageRepository', () => {
     warn.mockRestore();
   });
 
+  it('hands over a deleted row so the deletion can travel', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.deletePlan('p1');
+
+    const rows = await repo.rowsToUpload(await repo.listPending());
+
+    // listPlans() hides this row on purpose. The server has to hear about it,
+    // or the other device hands the block straight back.
+    expect(rows.plans.map((row) => row.id)).toEqual(['p1']);
+    expect(rows.plans[0].deletedAt).not.toBeNull();
+  });
+
+  it('hands over only what is owed, not the whole store', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    await repo.clearPending({ projects: [], plans: ['p1'], overrides: [] });
+
+    const rows = await repo.rowsToUpload(await repo.listPending());
+    expect(rows.plans.map((row) => row.id)).toEqual(['p2']);
+  });
+
+  it('skips an id whose row is no longer there', async () => {
+    const repo = new LocalStorageRepository();
+
+    // A queue can outlive its row: cleared storage, a migration that dropped a
+    // corrupt row. Uploading `undefined` would be worse than uploading nothing.
+    const rows = await repo.rowsToUpload({ projects: [], plans: ['ghost'], overrides: [] });
+    expect(rows.plans).toEqual([]);
+  });
+
   it('rewrites a recovered queue on the next save, so later reads see the healed key', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
@@ -729,6 +860,266 @@ describe('LocalStorageRepository', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('starts with no token and no cursor', async () => {
+    const repo = new LocalStorageRepository();
+    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null, joined: false });
+  });
+
+  it('treats a device that has never synced as not joined', async () => {
+    const repo = new LocalStorageRepository();
+    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null, joined: false });
+  });
+
+  it('does not read a damaged joined flag as joined', async () => {
+    localStorage.setItem('nowline.sync.v1', JSON.stringify({ token: 'abc', joined: 'yes please' }));
+
+    // Anything but a real `true` means the question has not been answered.
+    // Guessing "joined" here is guessing away the one screen that protects the
+    // owner's data.
+    expect((await new LocalStorageRepository().readSyncState()).joined).toBe(false);
+  });
+
+  it('keeps the token and the cursor across instances', async () => {
+    await new LocalStorageRepository().writeSyncState({
+      token: 'abc',
+      cursor: '2026-09-09T20:00:00.000Z',
+      joined: true,
+    });
+
+    const later = new LocalStorageRepository();
+    expect(await later.readSyncState()).toEqual({
+      token: 'abc',
+      cursor: '2026-09-09T20:00:00.000Z',
+      joined: true,
+    });
+  });
+
+  it('treats a damaged sync state as never having synced', async () => {
+    localStorage.setItem('nowline.sync.v1', 'not json at all');
+
+    // Forgetting the cursor costs one full download. Trusting a damaged one
+    // costs rows that are never asked for again.
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({
+      token: null,
+      cursor: null,
+      joined: false,
+    });
+  });
+
+  it('keeps the token when only the cursor is damaged', async () => {
+    localStorage.setItem('nowline.sync.v1', JSON.stringify({ token: 'abc', cursor: 42 }));
+
+    // Losing the token means the owner types a password again for nothing.
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({
+      token: 'abc',
+      cursor: null,
+      joined: false,
+    });
+  });
+
+  it('keeps an id in the queue when the row changed while it was in flight', async () => {
+    // Two clocks, on purpose: two saves in one millisecond share an updatedAt,
+    // and the race this test pins is a stamp that moved between read and confirm.
+    const versionAAt = '2026-09-06T10:00:00.000Z';
+    const versionBAt = '2026-09-07T10:00:00.000Z';
+    const repo = new LocalStorageRepository(() => new Date(versionAAt));
+    await repo.savePlan({ ...plan, id: 'p1', title: 'version A' });
+
+    // What the upload loop sent, read before the request went out.
+    const sent = await repo.rowsToUpload(await repo.listPending());
+    const asSent = { id: 'p1', updatedAt: sent.plans[0].updatedAt };
+
+    // The owner edits while the request is in the air. markPending changes
+    // nothing: p1 is already queued.
+    const repoAfterEdit = new LocalStorageRepository(() => new Date(versionBAt));
+    await repoAfterEdit.savePlan({ ...plan, id: 'p1', title: 'version B' });
+
+    await repoAfterEdit.clearPendingUnchanged({ projects: [], plans: [asSent], overrides: [] });
+
+    // Version B is still owed. Clearing by id alone would lose it silently.
+    expect((await repoAfterEdit.listPending()).plans).toEqual(['p1']);
+  });
+
+  it('drops an id whose row is untouched since it was sent', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    const sent = await repo.rowsToUpload(await repo.listPending());
+
+    await repo.clearPendingUnchanged({
+      projects: [],
+      plans: [{ id: 'p1', updatedAt: sent.plans[0].updatedAt }],
+      overrides: [],
+    });
+
+    expect((await repo.listPending()).plans).toEqual([]);
+  });
+
+  it('leaves alone an id it was not told about', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    const sent = await repo.rowsToUpload(await repo.listPending());
+    const p1 = sent.plans.find((row) => row.id === 'p1');
+
+    await repo.clearPendingUnchanged({
+      projects: [],
+      plans: [{ id: 'p1', updatedAt: p1?.updatedAt as string }],
+      overrides: [],
+    });
+
+    expect((await repo.listPending()).plans).toEqual(['p2']);
+  });
+
+  it('writes a downloaded row without stamping it or queueing it', async () => {
+    const repo = new LocalStorageRepository();
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...{ ...plan, id: 'p1', title: 'from the other device' }, updatedAt: '2026-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    // The stamp is the other device's, kept exactly: it is what decides who
+    // wins next time. Re-stamping here would make this device look newer than
+    // it is, and the two would hand the same row back and forth for ever.
+    expect(stored[0].updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect((await repo.listPending()).plans).toEqual([]);
+  });
+
+  it('keeps the local copy when it carries the newer stamp', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1', title: 'mine, edited just now' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...{ ...plan, id: 'p1', title: 'older, from the server' }, updatedAt: '2020-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    const plans = await repo.listPlans();
+    expect(plans[0].title).toBe('mine, edited just now');
+  });
+
+  it('lets a downloaded tombstone bury a row this device still shows', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...{ ...plan, id: 'p1' }, deletedAt: '2099-01-01T00:00:00.000Z', updatedAt: '2099-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    // Not `listPlans()` alone: an empty list is also what a row deleted outright
+    // looks like, so that assertion cannot tell burying from removing. The row
+    // has to still be there, carrying its tombstone — it is what this device
+    // will hand the next device that asks.
+    const stored = JSON.parse(localStorage.getItem('nowline.plans.v2') ?? '[]');
+    expect(stored.map((row: { id: string; deletedAt: string | null }) => [row.id, row.deletedAt])).toEqual([
+      ['p1', '2099-01-01T00:00:00.000Z'],
+    ]);
+    expect(await repo.listPlans()).toEqual([]);
+  });
+
+  it('drops the overrides of a plan whose tombstone came down from the cloud', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    await repo.saveOverride(override('2026-09-03'));
+    await repo.saveOverride({ ...override('2026-09-04'), id: 'o-other', planId: 'p2' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'p1', deletedAt: '2099-01-01T00:00:00.000Z', updatedAt: '2099-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    // The device that deleted p1 dropped p1's overrides and told nobody: an
+    // override has no tombstone of its own. This device has to run the same
+    // cascade, or a running override with no plan to stop it stays behind.
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]');
+    expect(stored.map((row: { id: string }) => row.id)).toEqual(['o-other']);
+    // And it leaves the queue: uploading it would hand the server a live
+    // override for a buried plan, which the next download writes straight back.
+    const pending = JSON.parse(localStorage.getItem('nowline.pending.v1') ?? '{}');
+    expect(pending.overrides).not.toContain('o-2026-09-03');
+  });
+
+  it('drops the overrides that arrive in the same download as the plan\'s tombstone', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    await repo.saveOverride(override('2026-09-03'));
+    await repo.saveOverride({ ...override('2026-09-04'), id: 'o-other', planId: 'p2' });
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'p1', deletedAt: '2099-01-01T00:00:00.000Z', updatedAt: '2099-01-01T00:00:00.000Z' }],
+      overrides: [{ ...override('2026-09-03'), updatedAt: '2098-01-01T00:00:00.000Z' }],
+    });
+
+    // A catch-up download brings the override from before the deletion and the
+    // tombstone from after it, in one reply; dropping before merging would write
+    // the override back.
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]');
+    expect(stored.map((row: { id: string }) => row.id)).toEqual(['o-other']);
+  });
+
+  it('keeps a plan and its overrides when the tombstone that arrives is older than this device\'s copy', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.saveOverride(override('2026-09-03'));
+
+    await repo.applyFromServer({
+      projects: [],
+      plans: [{ ...plan, id: 'p1', deletedAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' }],
+      overrides: [],
+    });
+
+    // The newer stamp wins in both directions, and a tombstone that lost the
+    // merge must not run the cascade of a deletion that did not win.
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['p1']);
+    const stored = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]');
+    expect(stored.map((row: { id: string }) => row.id)).toEqual(['o-2026-09-03']);
+  });
+
+  it('keeps a copy of everything local before anything is discarded', async () => {
+    await repo.saveProject({ ...project, id: 'pr1' });
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.saveOverride(override('2026-09-03'));
+
+    await repo.keepDiscardedCopy('2026-09-09');
+
+    const saved = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-09') ?? 'null');
+    // Nothing is destroyed. Same idea as keeping the tt.*.v1 keys: the owner's
+    // real data lives on a phone, where there is no console to dig it out of.
+    expect(saved.projects[0].id).toBe('pr1');
+    expect(saved.plans[0].id).toBe('p1');
+    expect(saved.overrides[0].id).toBe('o-2026-09-03');
+
+    // The name says "before anything is discarded": the live rows have to still
+    // be there when the copy is taken, or the copy is all that is left.
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['p1']);
+  });
+
+  it('never writes over a copy it already kept', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.savePlan({ ...plan, id: 'the-original' });
+    await repo.keepDiscardedCopy('2026-09-10');
+
+    await repo.applyFromServer({ projects: [], plans: [{ ...plan, id: 'from-the-cloud' }], overrides: [] });
+    await repo.keepDiscardedCopy('2026-09-10');
+
+    // Two choices on one day used to leave one key. The first copy is the one
+    // holding what was actually the owner's; losing it to the second is losing
+    // the only way back.
+    const first = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-10') ?? 'null');
+    expect(first.plans.map((row: { id: string }) => row.id)).toEqual(['the-original']);
+    const second = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-10.2') ?? 'null');
+    expect(second).not.toBeNull();
   });
 
   it('still drops a deleted plan\'s overrides from storage when the queue write is the one that fills storage', async () => {

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { Collection, Db, Document } from 'mongodb';
+import type { Collection, Db } from 'mongodb';
 import { collections } from '../db.js';
 import { identify } from '../identity.js';
 
@@ -26,7 +26,7 @@ function isDuplicateKey(error: unknown): boolean {
  * there is.
  */
 export async function saveRow(
-  store: Collection<Document>,
+  store: Collection,
   userId: string,
   row: Row,
   stamp: string,
@@ -52,6 +52,15 @@ export async function saveRow(
   }
 }
 
+type SyncBody = {
+  since?: unknown;
+  changes?: Partial<Record<Kind, unknown>>;
+};
+
+function isRow(value: unknown): value is Row {
+  return typeof value === 'object' && value !== null && typeof (value as Row).id === 'string';
+}
+
 export function syncRoute(db: Db): Router {
   const router = Router();
 
@@ -63,8 +72,9 @@ export function syncRoute(db: Db): Router {
       return;
     }
 
-    const since = typeof request.body?.since === 'string' ? request.body.since : null;
-    const incoming = request.body?.changes ?? {};
+    const body = request.body as SyncBody;
+    const since = typeof body.since === 'string' ? body.since : null;
+    const incoming = body.changes ?? {};
 
     // A row the server dropped has to be named. The client empties its pending
     // queue when it gets a correct answer, so a silent skip inside a 200 is an
@@ -72,15 +82,15 @@ export function syncRoute(db: Db): Router {
     const rejected: string[] = [];
 
     for (const kind of KINDS) {
-      const arriving: Row[] = Array.isArray(incoming[kind]) ? incoming[kind] : [];
+      const raw = incoming[kind];
+      const arriving: unknown[] = Array.isArray(raw) ? raw : [];
       const store = collections(db)[kind];
 
       for (const row of arriving) {
-        if (typeof row?.updatedAt !== 'string') {
-          if (typeof row?.id === 'string') rejected.push(row.id);
+        if (!isRow(row) || typeof row.updatedAt !== 'string') {
+          if (isRow(row)) rejected.push(row.id);
           continue;
         }
-        if (typeof row?.id !== 'string') continue;
 
         // Stamped when the row is written, which is what the spec says: the
         // server stamps a row "when it saves it". A stamp taken at the top of
@@ -97,7 +107,7 @@ export function syncRoute(db: Db): Router {
     // writing, and `$gt` would then skip that row for good. `$gte` re-sends
     // the row sitting exactly on the boundary; that costs one row per round
     // and is why nothing is lost.
-    let cursor = since ?? '';
+    let cursor: string = since ?? '';
     for (const kind of KINDS) {
       const filter = since ? { userId, serverUpdatedAt: { $gte: since } } : { userId };
       const rows = await collections(db)[kind].find(filter, { projection: { _id: 0 } }).toArray();

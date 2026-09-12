@@ -247,7 +247,7 @@ describe('sync', () => {
     await connect(db);
     const token = await issueToken(db, 'me');
 
-    const { updatedAt, ...withoutStamp } = plan;
+    const { updatedAt: _updatedAt, ...withoutStamp } = plan;
     const response = await post(
       db,
       '/api/sync',

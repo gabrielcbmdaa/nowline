@@ -1,7 +1,7 @@
-/** Must stay in sync with the --no-project custom property in src/styles.css. */
+/** Must stay in sync with the --no-project custom property in client/styles.css. */
 export const NO_PROJECT_COLOR = '#8B8D98';
 
-/** Must stay in sync with the --bg custom property in src/styles.css. */
+/** Must stay in sync with the --bg custom property in client/styles.css. */
 export const PAGE_BACKGROUND = '#0F0F0F';
 
 function channelToHex(value: number): string {
