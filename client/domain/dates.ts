@@ -59,6 +59,13 @@ export function wallClockMinutesBetween(start: Date, end: Date, key: string): nu
   return minutesSinceMidnight(end, key) - minutesSinceMidnight(start, key);
 }
 
+/**
+ * The instant a minute of a day names. On the day the clocks go forward there
+ * are minutes no clock shows — 02:00 to 02:59 in Madrid — and for those this
+ * answers the instant one jump later, 02:30 → 03:30: what JavaScript does with
+ * a nonexistent local time and what RFC 5545 §3.3.5 prescribes. A block planned
+ * at 02:30 is drawn at 03:30 that day; `dates.test.ts` pins the whole hour.
+ */
 export function atMinute(key: string, minute: number): Date {
   const date = dateKeyToMidnight(key);
   date.setMinutes(date.getMinutes() + minute);
