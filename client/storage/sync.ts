@@ -102,6 +102,10 @@ async function runSyncOnce(
   // decision anybody made.
   if (!joined && !answeredByTheOwner) return { kind: 'needs-first-sync' };
 
+  // A full download is owed once damaged rows have been overwritten locally: the
+  // cursor has passed them, so only `null` brings back what the server holds.
+  const owed = await repo.readResyncOwed();
+
   const pending = await repo.listPending();
   const outgoing = await repo.rowsToUpload(pending);
 
@@ -113,7 +117,7 @@ async function runSyncOnce(
     overrides: outgoing.overrides.map((row) => ({ id: row.id, updatedAt: row.updatedAt })),
   };
 
-  const reply = await send(token, cursor, outgoing);
+  const reply = await send(token, owed === null ? cursor : null, outgoing);
 
   if (isFailure(reply)) {
     if (reply.kind === 'unauthorized') {
@@ -141,6 +145,10 @@ async function runSyncOnce(
   });
 
   await repo.writeSyncState({ token, cursor: reply.serverTime, joined });
+
+  // Cleared only if it is still the marker this round read: one raised while
+  // the round was in flight is newer, survives, and the next round pays it.
+  if (owed !== null) await repo.clearResyncOwed(owed);
 
   const downloaded =
     reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;

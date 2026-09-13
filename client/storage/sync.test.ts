@@ -133,6 +133,7 @@ describe('inspectFirstSync', () => {
       result: { kind: 'already-joined' },
     });
 
+    await vi.waitFor(() => expect(send).toHaveBeenCalled());
     releaseSend();
     await round;
   });
@@ -545,5 +546,90 @@ describe('engine door', () => {
     release(undefined);
     await Promise.all([settle, look]);
     expect(order).toEqual(['settle: send', 'look done']);
+  });
+});
+
+describe('a full download once damaged rows have been overwritten', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const cloudPlan = { ...plan, id: 'from-cloud', updatedAt: '2026-09-10T00:00:00.000Z' };
+
+  it('sends no cursor while a download is owed, and the lost row comes back', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    // A blob this device cannot read, overwritten by an ordinary save: the
+    // marker is raised by that write, not by the read that found the damage.
+    localStorage.setItem('nowline.plans.v2', 'not json at all');
+    await repo.savePlan({ ...plan, id: 'mine' });
+    expect(await repo.readResyncOwed()).not.toBeNull();
+
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [cloudPlan], overrides: [] },
+      rejected: [],
+    });
+    const outcome = await syncOnce({ send, repo });
+
+    expect(send.mock.calls[0][1]).toBeNull();
+    expect(outcome).toEqual({ kind: 'done', downloaded: 1, stillOwed: 0 });
+    expect((await repo.listPlans()).map((row) => row.id).sort()).toEqual(['from-cloud', 'mine']);
+  });
+
+  it('pays the download once: the next round sends the stored cursor', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    localStorage.setItem('nowline.plans.v2', 'not json at all');
+    await repo.savePlan({ ...plan, id: 'mine' });
+    const send = vi.fn().mockResolvedValue(emptyReply('T1'));
+
+    await syncOnce({ send, repo });
+    await syncOnce({ send, repo });
+
+    expect(send.mock.calls.map((call) => call[1])).toEqual([null, 'T1']);
+    expect(await repo.readResyncOwed()).toBeNull();
+  });
+
+  it('keeps a marker raised while the round was in flight, and pays it next time', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    // The damage sits on a key nothing has written to yet, so no download is
+    // owed when the round starts...
+    localStorage.setItem('nowline.overrides.v2', 'not json at all');
+    // ...and the reply carries an override, so `applyFromServer` overwrites
+    // the damaged key during the round and raises the marker after it was read.
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: {
+        projects: [],
+        plans: [],
+        overrides: [
+          {
+            id: 'o-cloud',
+            planId: 'p1',
+            date: '2026-09-03',
+            status: 'scheduled',
+            actualStart: null,
+            actualEnd: null,
+            startMinute: 600,
+            durationMinutes: 30,
+            updatedAt: '2026-09-10T00:00:00.000Z',
+          },
+        ],
+      },
+      rejected: [],
+    });
+
+    await syncOnce({ send, repo });
+    expect(send.mock.calls[0][1]).toBe('T0');
+    // Cleared by the wall clock, this would be gone: the round wrote the state
+    // back after the overwrite. The compare keeps it.
+    expect(await repo.readResyncOwed()).not.toBeNull();
+
+    send.mockResolvedValue(emptyReply('T2'));
+    await syncOnce({ send, repo });
+    expect(send.mock.calls[1][1]).toBeNull();
+    expect(await repo.readResyncOwed()).toBeNull();
   });
 });
