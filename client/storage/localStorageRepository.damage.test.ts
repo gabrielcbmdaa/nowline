@@ -157,3 +157,64 @@ describe('writing over damaged storage', () => {
     expect(storedIds(KEY)).toEqual(['from-cloud']);
   });
 });
+
+describe('the full-download marker', () => {
+  const FROZEN = '2026-09-07T10:00:00.000Z';
+  const frozenClock = () => new Date(FROZEN);
+
+  beforeEach(() => {
+    localStorage.clear();
+    warned.mockClear();
+  });
+
+  it('is raised by the write over damage, not by the read that found it', async () => {
+    localStorage.setItem(KEY, 'not json at all');
+    const repo = new LocalStorageRepository(frozenClock);
+
+    await repo.listProjects();
+    // A damaged key nothing writes to would otherwise ask for a full download
+    // on every round for ever.
+    expect(await repo.readResyncOwed()).toBeNull();
+
+    await repo.saveProject(project);
+    expect(await repo.readResyncOwed()).toBe(FROZEN);
+  });
+
+  it('is not raised by an ordinary write', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    await repo.saveProject(project);
+    expect(await repo.readResyncOwed()).toBeNull();
+  });
+
+  it('gets a strictly newer stamp on every overwrite, even under a frozen clock', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    localStorage.setItem(KEY, 'not json at all');
+    await repo.saveProject(project);
+    const first = await repo.readResyncOwed();
+
+    localStorage.setItem(KEY, 'damaged again');
+    await repo.saveProject(project);
+    const second = await repo.readResyncOwed();
+
+    // Two overwrites that looked like one would let the engine clear a marker
+    // the second one had raised.
+    expect(first).toBe(FROZEN);
+    expect(second).toBe('2026-09-07T10:00:00.001Z');
+  });
+
+  it('is cleared only if it is still the one that was seen', async () => {
+    const repo = new LocalStorageRepository(frozenClock);
+    localStorage.setItem(KEY, 'not json at all');
+    await repo.saveProject(project);
+    const seen = await repo.readResyncOwed();
+    if (seen === null) throw new Error('the marker should be raised');
+
+    localStorage.setItem(KEY, 'damaged again');
+    await repo.saveProject(project);
+    await repo.clearResyncOwed(seen);
+    expect(await repo.readResyncOwed()).toBe('2026-09-07T10:00:00.001Z');
+
+    await repo.clearResyncOwed('2026-09-07T10:00:00.001Z');
+    expect(await repo.readResyncOwed()).toBeNull();
+  });
+});

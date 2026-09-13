@@ -9,6 +9,7 @@ const PLANS_KEY = 'nowline.plans.v2';
 const OVERRIDES_KEY = 'nowline.overrides.v2';
 const PENDING_KEY = 'nowline.pending.v1';
 const SYNC_KEY = 'nowline.sync.v1';
+const RESYNC_KEY = 'nowline.resync.v1';
 
 export type SyncState = { token: string | null; cursor: string | null; joined: boolean };
 
@@ -386,6 +387,42 @@ export class LocalStorageRepository implements BlockRepository {
     localStorage.setItem(SYNC_KEY, JSON.stringify(next));
   }
 
+  /**
+   * Raised only here, by the write that overwrites damaged content: the rows
+   * this device could not read leave its live key the moment that write lands,
+   * and the cursor has already passed them. Only a full download brings back
+   * what the server still holds. `read` must not raise it — a damaged key
+   * nothing writes to would then ask for a full download on every round for
+   * ever. Strictly increasing, the way `touch` stamps a row: a frozen clock
+   * must not make two overwrites look like one, or the engine would clear a
+   * marker the second overwrite had raised.
+   */
+  private oweFullDownload(): void {
+    const previous = localStorage.getItem(RESYNC_KEY);
+    const now = this.now().toISOString();
+    const stamp =
+      previous !== null && now <= previous && Number.isFinite(Date.parse(previous))
+        ? nextInstantAfter(previous)
+        : now;
+    localStorage.setItem(RESYNC_KEY, stamp);
+  }
+
+  /** The raw marker: anything but null means a full download is owed, a damaged marker included. */
+  async readResyncOwed(): Promise<string | null> {
+    this.ensureMigrated();
+    return localStorage.getItem(RESYNC_KEY);
+  }
+
+  /**
+   * Compare-and-clear, in one synchronous stretch: the marker goes only if it
+   * is still the one the round read when it started. One raised while the
+   * round was in flight is newer, stays, and the next round pays it.
+   */
+  async clearResyncOwed(seen: string): Promise<void> {
+    this.ensureMigrated();
+    if (localStorage.getItem(RESYNC_KEY) === seen) localStorage.removeItem(RESYNC_KEY);
+  }
+
   async clearPending(ids: PendingIds): Promise<void> {
     this.ensureMigrated();
     this.unmarkPending('projects', ids.projects);
@@ -583,6 +620,7 @@ export class LocalStorageRepository implements BlockRepository {
     const current = localStorage.getItem(key);
     if (current !== null && this.inspect(key, current).damage !== null) {
       this.quarantine(key, current);
+      this.oweFullDownload();
     }
     localStorage.setItem(key, JSON.stringify(rows));
   }
