@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BlockOverride, BlockPlan, Project } from './types';
-import { indexOverrides, occurrencesForDay, planAppliesOn } from './recurrence';
+import { addDays, dateKeyToMidnight, wallClockMinutesBetween } from './dates';
+import { indexOverrides, occurrencesForDay, planAppliesOn, resolveOccurrence } from './recurrence';
 
 const project: Project = {
   id: 'health',
@@ -381,5 +382,89 @@ describe('a block that runs past midnight belongs to the day it starts on', () =
     );
     expect(occurrence.status).toBe('done');
     expect(occurrence.displayEnd.getDate()).toBe(4);
+  });
+});
+
+/** How long a calendar day lasted; the tests below only have teeth where this is not always 24. */
+function hoursIn(key: string): number {
+  return (dateKeyToMidnight(addDays(key, 1)).getTime() - dateKeyToMidnight(key).getTime()) / 3600000;
+}
+
+/** A one-off plan at 01:00 for three hours, on whatever day is asked. */
+function threeHoursAtOne(anchorDate: string): BlockPlan {
+  return {
+    ...dailyPlan,
+    id: 'p-dst',
+    startMinute: 60,
+    durationMinutes: 180,
+    recurrence: { type: 'none' },
+    anchorDate,
+  };
+}
+
+/** The occurrence plus the figure the calendar actually draws: marks between its two ends. */
+function resolved(plan: BlockPlan, override: BlockOverride | null, date: string, now: Date) {
+  const occurrence = resolveOccurrence(plan, override, null, date, now);
+  if (occurrence === null) throw new Error('expected an occurrence');
+  return {
+    ...occurrence,
+    marks: wallClockMinutesBetween(occurrence.displayStart, occurrence.displayEnd, date),
+  };
+}
+
+describe('a planned end is marks of the grid after the start, not elapsed time', () => {
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-03-29')).toBe(23);
+    expect(hoursIn('2026-10-25')).toBe(25);
+    expect(hoursIn('2026-10-18')).toBe(24);
+  });
+
+  it('on an ordinary day, the control', () => {
+    const block = resolved(threeHoursAtOne('2026-10-18'), null, '2026-10-18', new Date(2026, 9, 18, 12));
+    expect(block.displayEnd.getHours()).toBe(4);
+    expect(block.marks).toBe(180);
+  });
+
+  /**
+   * Reproduced in Chrome on 2026-09-13: 01:00 plus 180 minutes of elapsed time
+   * is the 03:00 mark on the day the clocks go back, and the block drew two
+   * hours tall. The plan says three; it reaches the 04:00 mark like any day.
+   */
+  it('on the day the clocks go back', () => {
+    const block = resolved(threeHoursAtOne('2026-10-25'), null, '2026-10-25', new Date(2026, 9, 25, 12));
+    expect(block.displayEnd.getHours()).toBe(4);
+    expect(block.marks).toBe(180);
+  });
+
+  it('on the day the clocks go forward, which drew it four hours tall', () => {
+    const block = resolved(threeHoursAtOne('2026-03-29'), null, '2026-03-29', new Date(2026, 2, 29, 12));
+    expect(block.displayEnd.getHours()).toBe(4);
+    expect(block.marks).toBe(180);
+  });
+
+  it('when a block crosses midnight into the day the clocks go back', () => {
+    const plan = { ...threeHoursAtOne('2026-10-24'), startMinute: 23 * 60, durationMinutes: 300 };
+    const block = resolved(plan, null, '2026-10-24', new Date(2026, 9, 24, 12));
+    expect(block.displayEnd.getDate()).toBe(25);
+    expect(block.displayEnd.getHours()).toBe(4);
+    expect(block.marks).toBe(300);
+  });
+
+  it('while running, the planned length it sits at is marks too', () => {
+    const running: BlockOverride = {
+      id: 'o-dst',
+      planId: 'p-dst',
+      date: '2026-10-25',
+      status: 'running',
+      actualStart: new Date(2026, 9, 25, 1, 0).toISOString(),
+      actualEnd: null,
+      startMinute: null,
+      durationMinutes: null,
+      updatedAt: new Date(2026, 9, 25, 1, 0).toISOString(),
+    };
+    const block = resolved(threeHoursAtOne('2026-10-25'), running, '2026-10-25', new Date(2026, 9, 25, 1, 30));
+    expect(block.status).toBe('running');
+    expect(block.displayEnd.getHours()).toBe(4);
+    expect(block.marks).toBe(180);
   });
 });

@@ -4,29 +4,43 @@ A time tracker shaped like a calendar. You plan a block, press play when you act
 start, and press stop when you actually finish — the block moves to the real time and
 shrinks to what really happened. The name is the red line that crosses the current hour.
 
-Mobile first, running on the web for now. Everything is stored in the browser.
+Mobile first, running on the web for now. Local first on this device, with one account
+kept in sync on the server.
 
 ## Running it
 
 Requires [pnpm](https://pnpm.io). npm and yarn are not used here.
 
+Three processes in development: the Vite dev server, the Node API, and MongoDB for
+the API and for the test suite.
+
 ```bash
 pnpm install
-pnpm dev          # http://localhost:5124, or --host to open it on a phone
-pnpm test         # unit tests
-pnpm build        # type-check, then a production build
+pnpm dev              # http://localhost:5124; add --host to open on a phone
+MONGO_URL=mongodb://127.0.0.1:27017 MONGO_DB=nowline_dev pnpm dev:server   # 127.0.0.1:3001
+pnpm test             # needs MongoDB on 127.0.0.1:27017
+pnpm build            # eslint, both type-checks, then vite build
 ```
+
+The server refuses to start without `MONGO_URL` and `MONGO_DB` — it never defaults
+the database name. `pnpm test` writes only to `nowline_test_*` databases on
+127.0.0.1:27017. See [CLAUDE.md](CLAUDE.md) for bringing MongoDB up on this machine,
+including the open-file limit before `mongod`.
 
 ## Deploy
 
 Live at <https://nowline.gabrielcbmd.com>.
 
-A push to `main` publishes it. GitHub Actions installs, runs the whole suite and
-builds; only if all three pass does a second job copy `dist/` to the server over
-rsync. That workflow only publishes `dist/` — nginx serves the built files — but
-the app also calls `/api/auth/login` and `/api/sync` on its own origin, so it
-needs the `server/` process behind `location /api/` too (phase 4 deploys that).
-Host, user and path live in repository secrets, not here.
+Every push to `main` runs two jobs. The first installs dependencies, runs the whole
+suite against a `mongo:8` service, builds, and uploads `dist/` as an artifact. Only
+if that passes does the second job deploy — and it updates the **server first**, then
+copies the static files with `rsync --delete`: the other order leaves a new client
+calling `/api/sync` against a server that does not know what that is yet.
+
+On the server, the Node process runs from compiled `dist-server/` on `127.0.0.1:3001`,
+behind nginx's `location /api/`; its configuration lives in a `.env` on the machine,
+not in this repository. Create the account with `scripts/create-user.ts`. Host, user
+and path live in repository secrets.
 
 ## How it works
 
@@ -86,13 +100,26 @@ different calendar day. Every date in this app is a local day key built through
 `client/ui/sheets/DatePickerSheet.test.ts` fails if that rule is broken in the month grid,
 which is where it bit hardest.
 
-### One file to swap for a server
+### The repository stays local; sync sits beside it
 
 `client/storage/repository.ts` defines the `BlockRepository` interface and exports the active
 implementation. Nothing outside `client/storage/` touches `localStorage` or knows it
-exists, tests aside.
-Every method is `async` even though the current implementation is synchronous, precisely
-so that a network implementation can replace it without touching a single call site.
+exists, tests aside. Every method is `async` even though the current implementation is
+synchronous, so a network-backed store could replace the local one without touching a
+single call site — but the server did not replace it. The app stays local first; rounds
+of agreement with one account live in `client/storage/sync.ts` beside the repository
+(upload what this device owes, download what it lacks). See `CLAUDE.md` for the sync
+invariants.
+
+### Damaged storage is quarantined, never overwritten
+
+A damaged key — an empty string, JSON that is not an array, a row without a string `id` —
+is reported on every read and what can be read is returned. Before the first write that
+would overwrite it, `write` copies the raw text under `<key>.corrupt` (then `.corrupt.2`,
+`.3`…, never overwriting an earlier copy), and refuses the overwrite if that copy cannot
+be written. That same write raises `nowline.resync.v1`, because the rows this device could
+not read will not come back through the cursor — the next round downloads everything. A
+phone has no console to dig the data out of.
 
 ### Native scroll anchoring has to be turned off
 
@@ -153,15 +180,17 @@ confirmation at all.
 Timer transitions are serialised on a promise queue in `client/state/store.ts`, and a start
 re-reads the running timer from storage before deciding. Two browser tabs can still race in
 the gap between that read and the write — closing it needs an atomic compare-and-set that
-`localStorage` cannot offer and a server can. See the caveats below.
+`localStorage` cannot offer and the server does not offer yet. See the caveats below.
 
 ## Layout
 
 ```
-client/domain/      pure logic: geometry, dates, the stopwatch, recurrence, totals
-client/storage/    the repository interface and its localStorage implementation
-client/state/        one module-level store, exposed through useSyncExternalStore
-client/ui/              React components; client/ui/calendar/ is the strip
+client/domain/         pure logic: geometry, dates, the stopwatch, recurrence, totals
+client/storage/        the repository interface and its localStorage implementation
+client/storage/sync.ts one round: upload what is owed, download what is missing
+client/state/          one module-level store, exposed through useSyncExternalStore
+client/ui/             React components; client/ui/calendar/ is the strip
+server/                Express + MongoDB: POST /api/auth/login, POST /api/sync, GET /api/health
 ```
 
 No router, no state library, no CSS framework, no calendar library. React 19, TypeScript,
@@ -169,16 +198,20 @@ Vite and Vitest.
 
 ## Known limitations
 
-- **Two open tabs can both start a timer.** Narrowed, not eliminated; needs the server.
+- **Two open tabs can both start a timer.** Narrowed, not eliminated; closing it needs an
+  atomic compare-and-set that neither `localStorage` nor the server offer today.
 - **The calendar strip has no rendering tests.** The ones that render cover a
   block and the two sheets; the strip itself — scrolling, the sliding window, a drag from
   pointer to stored override — was verified by hand in a browser, which is not repeatable
   in CI. This is the most valuable thing left to add.
 - **The grid is always 24 hours tall, even on the two days that are not.** Blocks are
-  placed by wall-clock minute and totals are summed from real timestamps, so both are
-  right on a clock change — `client/domain/dates.ts`, with the tests pinned to Madrid
-  because it changes its clocks. What does not happen is the grid growing or shrinking:
-  the skipped hour still takes up its 64 pixels.
+  placed by wall-clock minute, a planned end is wall-clock minutes after its start, and
+  totals are summed from real timestamps, so all three are right on a clock change —
+  `client/domain/dates.ts`, with the tests pinned to Madrid because it changes its clocks.
+  The hour no clock shows on the day they go forward moves a block forward by the jump
+  (02:30 becomes 03:30 in Madrid), which is the RFC 5545 reading and is pinned for every
+  minute of the year. What does not happen is the grid growing or shrinking: the skipped
+  hour still takes up its 64 pixels.
 - **Block times show no AM/PM** — `7:00` reads the same at either end of the day. The hour
   gutter beside the block supplies the context. Deliberate, matching the design.
 - **The date picker has no arrow-key navigation.** Tab and Enter work.

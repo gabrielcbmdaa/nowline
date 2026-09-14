@@ -9,6 +9,7 @@ const PLANS_KEY = 'nowline.plans.v2';
 const OVERRIDES_KEY = 'nowline.overrides.v2';
 const PENDING_KEY = 'nowline.pending.v1';
 const SYNC_KEY = 'nowline.sync.v1';
+const RESYNC_KEY = 'nowline.resync.v1';
 
 export type SyncState = { token: string | null; cursor: string | null; joined: boolean };
 
@@ -386,6 +387,42 @@ export class LocalStorageRepository implements BlockRepository {
     localStorage.setItem(SYNC_KEY, JSON.stringify(next));
   }
 
+  /**
+   * Raised only here, by the write that overwrites damaged content: the rows
+   * this device could not read leave its live key the moment that write lands,
+   * and the cursor has already passed them. Only a full download brings back
+   * what the server still holds. `read` must not raise it — a damaged key
+   * nothing writes to would then ask for a full download on every round for
+   * ever. Strictly increasing, the way `touch` stamps a row: a frozen clock
+   * must not make two overwrites look like one, or the engine would clear a
+   * marker the second overwrite had raised.
+   */
+  private oweFullDownload(): void {
+    const previous = localStorage.getItem(RESYNC_KEY);
+    const now = this.now().toISOString();
+    const stamp =
+      previous !== null && now <= previous && Number.isFinite(Date.parse(previous))
+        ? nextInstantAfter(previous)
+        : now;
+    localStorage.setItem(RESYNC_KEY, stamp);
+  }
+
+  /** The raw marker: anything but null means a full download is owed, a damaged marker included. */
+  async readResyncOwed(): Promise<string | null> {
+    this.ensureMigrated();
+    return localStorage.getItem(RESYNC_KEY);
+  }
+
+  /**
+   * Compare-and-clear, in one synchronous stretch: the marker goes only if it
+   * is still the one the round read when it started. One raised while the
+   * round was in flight is newer, stays, and the next round pays it.
+   */
+  async clearResyncOwed(seen: string): Promise<void> {
+    this.ensureMigrated();
+    if (localStorage.getItem(RESYNC_KEY) === seen) localStorage.removeItem(RESYNC_KEY);
+  }
+
   async clearPending(ids: PendingIds): Promise<void> {
     this.ensureMigrated();
     this.unmarkPending('projects', ids.projects);
@@ -523,27 +560,86 @@ export class LocalStorageRepository implements BlockRepository {
     localStorage.setItem(PENDING_KEY, JSON.stringify(nothingPending()));
   }
 
-  private read<T>(key: string): T[] {
+  /**
+   * One reading of a key, shared by `read` and by the guard in `write`, so the
+   * two cannot disagree about what counts as damage. An absent key is not
+   * damage; an empty string is (`write` always stores at least `[]`, so this is
+   * a truncated write), and so is anything that is not a JSON array of rows
+   * with a string id. What can be read is returned either way.
+   */
+  private inspect(
+    key: string,
+    raw: string | null,
+  ): { rows: unknown[]; damage: { what: string; detail: unknown } | null } {
+    if (raw === null) return { rows: [], damage: null };
+    if (raw === '') return { rows: [], damage: { what: `Stored "${key}" is empty`, detail: raw } };
+
+    let parsed: unknown;
     try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return [];
-      const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter(
-        (row): row is T =>
-          row !== null &&
-          typeof row === 'object' &&
-          typeof (row as { id?: unknown }).id === 'string',
-      );
+      parsed = JSON.parse(raw);
     } catch (error) {
-      reportWarning(`Reading "${key}" from storage failed`, error);
-      // Corrupt storage must not brick the app; start from an empty list.
-      return [];
+      return { rows: [], damage: { what: `Reading "${key}" from storage failed`, detail: error } };
     }
+    if (!Array.isArray(parsed)) {
+      return { rows: [], damage: { what: `Stored "${key}" is not an array`, detail: parsed } };
+    }
+
+    const rows = parsed.filter(
+      (row): row is { id: string } =>
+        row !== null &&
+        typeof row === 'object' &&
+        typeof (row as { id?: unknown }).id === 'string',
+    );
+    const dropped = parsed.length - rows.length;
+    return {
+      rows,
+      damage:
+        dropped === 0
+          ? null
+          : { what: `Stored "${key}" holds ${dropped} row(s) without a string id`, detail: parsed },
+    };
   }
 
+  /**
+   * Corrupt storage must not brick the app, and must not silently delete what
+   * was there: what can be read is returned, what cannot is reported here on
+   * every read, and quarantined by `write` before anything overwrites it.
+   */
+  private read<T>(key: string): T[] {
+    const { rows, damage } = this.inspect(key, localStorage.getItem(key));
+    if (damage !== null) reportWarning(damage.what, damage.detail);
+    return rows as T[];
+  }
+
+  /**
+   * Never overwrite what could not be read. A damaged blob is copied under
+   * `<key>.corrupt` first, and if that copy cannot be written the overwrite is
+   * refused: the save fails loudly instead of the rows dying quietly.
+   */
   private write(key: string, rows: unknown[]): void {
+    const current = localStorage.getItem(key);
+    if (current !== null && this.inspect(key, current).damage !== null) {
+      this.quarantine(key, current);
+      this.oweFullDownload();
+    }
     localStorage.setItem(key, JSON.stringify(rows));
+  }
+
+  /**
+   * Under `<key>.corrupt`, then `.corrupt.2`, `.corrupt.3`…: never overwriting
+   * an earlier copy — the one that mattered is the first — and never repeating a
+   * string already held, or every save over the same damage would add a copy.
+   */
+  private quarantine(key: string, raw: string): void {
+    let target = `${key}.corrupt`;
+    for (let attempt = 2; ; attempt += 1) {
+      const held = localStorage.getItem(target);
+      if (held === null) break;
+      if (held === raw) return;
+      target = `${key}.corrupt.${attempt}`;
+    }
+    localStorage.setItem(target, raw);
+    reportWarning(`Quarantined the damaged "${key}" under "${target}"`, raw.length);
   }
 }
 

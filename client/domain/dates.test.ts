@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addDays,
+  addWallClockMinutes,
   atMinute,
+  wallClockMinuteOf,
   wallClockMinutesBetween,
   compareDateKeys,
   dateKeyToMidnight,
@@ -60,26 +62,64 @@ describe('dates', () => {
   });
 });
 
+type Stranded = { key: string; minute: number; cameBack: number };
+
 /**
  * The property, which names no date at all: a minute turned into an instant and
- * back has to survive the round trip. Whichever days are short or long, they are
- * in here somewhere. A test that hardcoded the transition days would be only as
- * right as whoever looked them up.
+ * back has to survive the round trip — except the minutes no clock shows on the
+ * day the clocks go forward, which are the only ones allowed here. Whichever
+ * days are short, they are in here somewhere. A test that hardcoded the
+ * transition days would be only as right as whoever looked them up.
  */
-function daysThatDoNotRoundTrip(year: number): string[] {
-  const broken: string[] = [];
+function minutesThatDoNotRoundTrip(year: number): Stranded[] {
+  const stranded: Stranded[] = [];
   let key = `${year}-01-01`;
-
   while (key < `${year + 1}-01-01`) {
-    for (const minute of [0, 10 * 60, 23 * 60 + 59]) {
-      if (minutesSinceMidnight(atMinute(key, minute), key) !== minute) {
-        broken.push(`${key} at ${minute}`);
-      }
+    for (let minute = 0; minute < 1440; minute += 1) {
+      const cameBack = minutesSinceMidnight(atMinute(key, minute), key);
+      if (cameBack !== minute) stranded.push({ key, minute, cameBack });
     }
     key = addDays(key, 1);
   }
+  return stranded;
+}
 
-  return broken;
+function shortDaysOf(year: number): string[] {
+  const short: string[] = [];
+  let key = `${year}-01-01`;
+  while (key < `${year + 1}-01-01`) {
+    if (hoursIn(key) < 24) short.push(key);
+    key = addDays(key, 1);
+  }
+  return short;
+}
+
+/**
+ * The minutes that fail are exactly the ones that do not exist, and each comes
+ * back moved forward by the whole jump: the rule RFC 5545 §3.3.5 gives for a
+ * nonexistent local time, and what `atMinute` does. Asserted as a shape rather
+ * than a list, so it says the same thing in any zone.
+ */
+function expectOnlyTheMissingHour(year: number): void {
+  const byDay = new Map<string, Stranded[]>();
+  for (const entry of minutesThatDoNotRoundTrip(year)) {
+    byDay.set(entry.key, [...(byDay.get(entry.key) ?? []), entry]);
+  }
+
+  // Every stranded minute sits on a short day, and every short day has some.
+  expect([...byDay.keys()].sort()).toEqual(shortDaysOf(year));
+
+  for (const [key, entries] of byDay) {
+    const jump = (24 - hoursIn(key)) * 60;
+    const minutes = entries.map((entry) => entry.minute);
+    // One contiguous run, as long as the jump...
+    expect(minutes).toHaveLength(jump);
+    expect(minutes).toEqual(minutes.map((_, index) => minutes[0] + index));
+    // ...and each one moved forward by exactly the jump.
+    for (const entry of entries) {
+      expect(entry.cameBack).toBe(entry.minute + jump);
+    }
+  }
 }
 
 /**
@@ -101,8 +141,17 @@ describe('minutes and wall clock across a daylight saving change', () => {
     expect(hoursIn('2026-09-03')).toBe(24);
   });
 
-  it('round-trips every minute of every day of a year', () => {
-    expect(daysThatDoNotRoundTrip(2026)).toEqual([]);
+  it('round-trips every minute of every day of a year, except the ones no clock shows', () => {
+    expectOnlyTheMissingHour(2026);
+  });
+
+  /** The rule spelled out, for whoever reads the property test and asks what it allows. */
+  it('moves a block at 02:30 to 03:30 on the day that hour does not exist', () => {
+    // Madrid jumps 02:00 -> 03:00 on 2026-03-29: 02:30 is a time no clock shows.
+    const at = atMinute('2026-03-29', 150);
+    expect(at.getHours()).toBe(3);
+    expect(at.getMinutes()).toBe(30);
+    expect(minutesSinceMidnight(at, '2026-03-29')).toBe(210);
   });
 
   /** The same failure spelled out, for whoever reads the property test and asks which days. */
@@ -178,8 +227,16 @@ describe('a clock change that is not a whole hour', () => {
     expect(hoursIn('2026-04-05')).toBe(24.5);
   });
 
-  it('round-trips every minute of every day of a year there too', () => {
-    expect(daysThatDoNotRoundTrip(2026)).toEqual([]);
+  it('round-trips every minute there too, except the missing half hour', () => {
+    expectOnlyTheMissingHour(2026);
+  });
+
+  it('moves a block at 02:15 to 02:45 on the day that half hour does not exist', () => {
+    // Lord Howe jumps 02:00 -> 02:30 on 2026-10-04.
+    const at = atMinute('2026-10-04', 135);
+    expect(at.getHours()).toBe(2);
+    expect(at.getMinutes()).toBe(45);
+    expect(minutesSinceMidnight(at, '2026-10-04')).toBe(165);
   });
 
   it('keeps a 10:00 block at 10:00 on both half-hour changes', () => {
@@ -187,5 +244,74 @@ describe('a clock change that is not a whole hour', () => {
     // 2026-10-04 and falls 02:00 -> 01:30 on 2026-04-05.
     expect(minutesSinceMidnight(new Date(2026, 9, 4, 10, 0), '2026-10-04')).toBe(600);
     expect(minutesSinceMidnight(new Date(2026, 3, 5, 10, 0), '2026-04-05')).toBe(600);
+  });
+});
+
+describe('addWallClockMinutes moves by marks of the grid, not by elapsed time', () => {
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-03-29')).toBe(23);
+    expect(hoursIn('2026-10-25')).toBe(25);
+  });
+
+  it('is plain addition on an ordinary day, seconds and milliseconds kept', () => {
+    const end = addWallClockMinutes(new Date(2026, 8, 3, 1, 0, 30, 500), 180);
+    expect([end.getHours(), end.getMinutes(), end.getSeconds(), end.getMilliseconds()]).toEqual([
+      4, 0, 30, 500,
+    ]);
+  });
+
+  it('reaches the 04:00 mark on the day the clocks go back, after four hours of stopwatch', () => {
+    const start = new Date(2026, 9, 25, 1, 0);
+    const end = addWallClockMinutes(start, 180);
+    expect(end.getHours()).toBe(4);
+    expect(wallClockMinutesBetween(start, end, '2026-10-25')).toBe(180);
+    // The elapsed figure, for contrast: `getTime() + ms` stopped at the 03:00 mark.
+    expect((end.getTime() - start.getTime()) / 60000).toBe(240);
+  });
+
+  it('reaches the 04:00 mark on the day the clocks go forward, after two hours of stopwatch', () => {
+    const start = new Date(2026, 2, 29, 1, 0);
+    const end = addWallClockMinutes(start, 180);
+    expect(end.getHours()).toBe(4);
+    expect(wallClockMinutesBetween(start, end, '2026-03-29')).toBe(180);
+    expect((end.getTime() - start.getTime()) / 60000).toBe(120);
+  });
+
+  /**
+   * The inverse, for every quarter hour of the two changing days. The one
+   * exception is an end that lands in the hour no clock shows: it moves forward
+   * by the jump, the same rule `atMinute` follows and the round-trip test pins.
+   */
+  it('inverts wallClockMinutesBetween, except into the missing hour', () => {
+    for (const key of ['2026-03-29', '2026-10-25']) {
+      for (let startMinute = 0; startMinute < 1440; startMinute += 15) {
+        const start = atMinute(key, startMinute);
+        for (let length = 15; length <= 1440; length += 15) {
+          const marks = wallClockMinutesBetween(start, addWallClockMinutes(start, length), key);
+          const endMinute = startMinute + length;
+          const landsInTheGap =
+            key === '2026-03-29' && startMinute < 120 && endMinute >= 120 && endMinute < 180;
+          expect(marks).toBe(landsInTheGap ? length + 60 : length);
+        }
+      }
+    }
+  });
+});
+
+describe("wallClockMinuteOf reads the clock on the instant's own day", () => {
+  it('drops the seconds', () => {
+    expect(wallClockMinuteOf(new Date(2026, 8, 3, 5, 30, 45))).toBe(330);
+  });
+
+  it('reads the same as the hour and minute fields on both changing days', () => {
+    for (const [month, day] of [
+      [2, 29],
+      [9, 25],
+    ]) {
+      for (let minute = 0; minute < 1440; minute += 1) {
+        const instant = new Date(2026, month, day, 0, minute, 30);
+        expect(wallClockMinuteOf(instant)).toBe(instant.getHours() * 60 + instant.getMinutes());
+      }
+    }
   });
 });

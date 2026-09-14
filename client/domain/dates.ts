@@ -59,6 +59,37 @@ export function wallClockMinutesBetween(start: Date, end: Date, key: string): nu
   return minutesSinceMidnight(end, key) - minutesSinceMidnight(start, key);
 }
 
+/**
+ * The instant `minutes` marks of the grid after `start` — the inverse of
+ * `wallClockMinutesBetween`, and not `start + minutes * 60000`: on the day the
+ * clocks go back, 01:00 plus 180 marks is 04:00 and 240 minutes of stopwatch.
+ * Seconds and milliseconds are kept, since a tracked start carries them. An
+ * end that lands in the hour no clock shows moves forward by the jump, the
+ * rule `atMinute` follows.
+ */
+export function addWallClockMinutes(start: Date, minutes: number): Date {
+  const end = new Date(start.getTime());
+  end.setMinutes(end.getMinutes() + minutes);
+  return end;
+}
+
+/**
+ * The minute a clock shows at `instant`, on the instant's own day, seconds
+ * dropped: what a `<input type="time">` can hold. It equals
+ * `getHours() * 60 + getMinutes()` on every minute of the year, and lives here
+ * so the wall-clock rule is not re-derived beside every time field.
+ */
+export function wallClockMinuteOf(instant: Date): number {
+  return Math.floor(minutesSinceMidnight(instant, toDateKey(instant)));
+}
+
+/**
+ * The instant a minute of a day names. On the day the clocks go forward there
+ * are minutes no clock shows — 02:00 to 02:59 in Madrid — and for those this
+ * answers the instant one jump later, 02:30 → 03:30: what JavaScript does with
+ * a nonexistent local time and what RFC 5545 §3.3.5 prescribes. A block planned
+ * at 02:30 is drawn at 03:30 that day; `dates.test.ts` pins the whole hour.
+ */
 export function atMinute(key: string, minute: number): Date {
   const date = dateKeyToMidnight(key);
   date.setMinutes(date.getMinutes() + minute);

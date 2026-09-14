@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addDays, dateKeyToMidnight, toDateKey, weekdayOf } from '../../domain/dates';
+import { addDays, atMinute, toDateKey, wallClockMinuteOf, weekdayOf } from '../../domain/dates';
 import { MINUTES_PER_DAY } from '../../domain/geometry';
 import { reportError } from '../../reportError';
 import { formatDuration } from '../../domain/summary';
@@ -29,16 +29,23 @@ const WEEKDAYS = [
   { value: 0, label: 'S', name: 'Sunday' },
 ];
 
-/** Hours and minutes of the local clock; seconds are not part of the field. */
-function wallClockMinute(instant: Date): number {
-  return instant.getHours() * 60 + instant.getMinutes();
-}
+/** One choice among three, so radios: what each one means is built here, not in three handlers. */
+const REPEAT_CHOICES = [
+  { value: 'none', label: 'Does not repeat' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekly', label: 'Weekly' },
+] as const;
 
-/** Place a wall-clock minute on a calendar day, seconds cleared. */
-function atWallClock(dateKey: string, minute: number): Date {
-  const instant = dateKeyToMidnight(dateKey);
-  instant.setHours(Math.floor(minute / 60), minute % 60, 0, 0);
-  return instant;
+function recurrenceFor(type: (typeof REPEAT_CHOICES)[number]['value'], date: string): Recurrence {
+  switch (type) {
+    case 'none':
+      return { type: 'none' };
+    case 'daily':
+      return { type: 'daily' };
+    case 'weekly':
+      // Weekly starts ticked on the day the block sits on.
+      return { type: 'weekly', weekdays: [weekdayOf(date)] };
+  }
 }
 
 /**
@@ -57,10 +64,10 @@ function resolveTrackedTimestamps(
   const originalStart = new Date(actualStartIso);
   const originalEnd = new Date(actualEndIso);
   const start = startEdited
-    ? atWallClock(toDateKey(originalStart), startMinute)
+    ? atMinute(toDateKey(originalStart), startMinute)
     : originalStart;
   const end = endEdited
-    ? atWallClock(
+    ? atMinute(
         endMinute > startMinute ? toDateKey(start) : addDays(toDateKey(start), 1),
         endMinute,
       )
@@ -101,10 +108,10 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [trackedStart, setTrackedStart] = useState(() =>
-    tracked?.actualStart ? wallClockMinute(new Date(tracked.actualStart)) : 0,
+    tracked?.actualStart ? wallClockMinuteOf(new Date(tracked.actualStart)) : 0,
   );
   const [trackedEnd, setTrackedEnd] = useState(() =>
-    tracked?.actualEnd ? wallClockMinute(new Date(tracked.actualEnd)) : 0,
+    tracked?.actualEnd ? wallClockMinuteOf(new Date(tracked.actualEnd)) : 0,
   );
   const [trackedStartEdited, setTrackedStartEdited] = useState(false);
   const [trackedEndEdited, setTrackedEndEdited] = useState(false);
@@ -364,29 +371,26 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
         </label>
       </div>
 
-      <div className="field">
-        <span className="field__label">Repeat</span>
+      <fieldset className="field">
+        <legend className="field__label">Repeat</legend>
+        {/* Radios, not buttons: the browser names the group, announces the checked
+            one, gives the group one Tab stop and the arrow keys — and a checked
+            radio clicked again fires no change, which is what keeps the picked
+            weekdays when "Weekly" is tapped twice. */}
         <div className="choices">
-          <button
-            className={`choice ${recurrence.type === 'none' ? 'choice--active' : ''}`}
-            onClick={() => setRecurrence({ type: 'none' })}
-          >
-            Does not repeat
-          </button>
-          <button
-            className={`choice ${recurrence.type === 'daily' ? 'choice--active' : ''}`}
-            onClick={() => setRecurrence({ type: 'daily' })}
-          >
-            Every day
-          </button>
-          <button
-            className={`choice ${recurrence.type === 'weekly' ? 'choice--active' : ''}`}
-            onClick={() =>
-              setRecurrence({ type: 'weekly', weekdays: [weekdayOf(date)] })
-            }
-          >
-            Weekly
-          </button>
+          {REPEAT_CHOICES.map((choice) => (
+            <label key={choice.value} className="choice">
+              <input
+                className="choice__input"
+                type="radio"
+                name="repeat"
+                value={choice.value}
+                checked={recurrence.type === choice.value}
+                onChange={() => setRecurrence(recurrenceFor(choice.value, date))}
+              />
+              {choice.label}
+            </label>
+          ))}
         </div>
         {repeats && recurrence.type === 'weekly' && (
           <div className="choices">
@@ -405,7 +409,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
             ))}
           </div>
         )}
-      </div>
+      </fieldset>
 
       {tracked && (
         <div className="field">

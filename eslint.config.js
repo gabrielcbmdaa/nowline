@@ -38,6 +38,17 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // `autoFocus` is applied before `Sheet` records where focus came from, so
+      // a sheet with one remembered its own input and handed focus to nothing on
+      // close — measured on 2026-09-13. A sheet that wants a field focused asks
+      // for it with `initialFocus`, which records first and focuses second.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXAttribute[name.name="autoFocus"]',
+          message: 'Ask Sheet for the focus with initialFocus; autoFocus runs before Sheet records who had it.',
+        },
+      ],
     },
   },
   {

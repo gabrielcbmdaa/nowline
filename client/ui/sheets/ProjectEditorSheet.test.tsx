@@ -1,9 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Project } from '../../domain/types';
 import { repository } from '../../storage/repository';
 import { getState, loadAll } from '../../state/store';
 import { ProjectEditorSheet } from './ProjectEditorSheet';
+
+const health: Project = {
+  id: 'health',
+  name: 'Health',
+  color: '#E5484D',
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  deletedAt: null,
+};
 
 function typeName(value: string): void {
   fireEvent.change(screen.getByRole('textbox'), { target: { value } });
@@ -60,5 +70,26 @@ describe('ProjectEditorSheet', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(getState().projects.map((project) => project.name)).toEqual(['Health']);
     expect(await repository.listProjects()).toHaveLength(1);
+  });
+
+  describe('where focus goes', () => {
+    it('lands on the name when creating, so the keyboard comes up at once', () => {
+      render(<ProjectEditorSheet project={null} onClose={() => {}} />);
+      expect(document.activeElement).toBe(screen.getByRole('textbox'));
+    });
+
+    it('stays off the name when editing, and goes back to the row on close', () => {
+      const row = document.createElement('button');
+      document.body.append(row);
+      row.focus();
+
+      const { unmount } = render(<ProjectEditorSheet project={health} onClose={() => {}} />);
+      // Editing is usually the colour; the keyboard would only cover the swatches.
+      expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
+      unmount();
+
+      expect(document.activeElement).toBe(row);
+      row.remove();
+    });
   });
 });

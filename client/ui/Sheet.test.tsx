@@ -9,10 +9,22 @@
 // rendered sheet with a visible button inside reports zero boxes for every element, so
 // the list comes back empty and focus lands on the panel through the fallback branch
 // instead of on the close button. A test written here would pin the fallback, not the
-// behaviour. Faking the boxes is the open decision; see docs/TASK.md.
-import { cleanup, fireEvent, render } from '@testing-library/react';
+// behaviour. `initialFocus` does not go through `getFocusable`, so the focus a sheet asks for is covered below.
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Sheet } from './Sheet';
+
+/** A sheet that asks for its name field, the way the project editor does when creating. */
+function AskingForTheName() {
+  const nameRef = useRef<HTMLInputElement>(null);
+  return (
+    <Sheet title="Asking" onClose={() => {}} initialFocus={nameRef}>
+      <button>Before</button>
+      <input ref={nameRef} aria-label="Name" />
+    </Sheet>
+  );
+}
 
 function pressEscape(init: KeyboardEventInit = {}): void {
   fireEvent.keyDown(document, { key: 'Escape', ...init });
@@ -108,5 +120,24 @@ describe('Sheet', () => {
     unmount();
 
     expect(document.activeElement).toBe(opener);
+  });
+
+  it('puts the initial focus where it is asked to', () => {
+    render(<AskingForTheName />);
+    expect(document.activeElement).toBe(screen.getByLabelText('Name'));
+  });
+
+  it('returns focus to the opener even when it asked for an initial focus', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+
+    const { unmount } = render(<AskingForTheName />);
+    // The focus moved — and the sheet still remembers where it came from.
+    expect(document.activeElement).toBe(screen.getByLabelText('Name'));
+    unmount();
+
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 });

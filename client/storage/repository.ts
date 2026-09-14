@@ -35,6 +35,10 @@ export interface BlockRepository {
   clearPendingUnchanged(sent: SentRows): Promise<void>;
   readSyncState(): Promise<SyncState>;
   writeSyncState(next: SyncState): Promise<void>;
+  /** The raw marker; anything but null means a full download is owed. */
+  readResyncOwed(): Promise<string | null>;
+  /** Removes the marker only if it is still `seen`: one raised meanwhile stays. */
+  clearResyncOwed(seen: string): Promise<void>;
 
   /** Every row this device holds, tombstones included, counted for the first-sync question. */
   countLocalRows(): Promise<number>;
