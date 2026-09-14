@@ -88,10 +88,10 @@ export function nextPosition(
 
 /**
  * Both ends in marks of the grid. Only scheduled blocks reach here — `begin` returns
- * early for the tracked ones — and for those the elapsed figure happens to agree,
- * since `resolveOccurrence` builds their end by adding the planned duration back on.
- * Depending on that would be depending on a coincidence, so it asks the same question
- * the grid asks.
+ * early for the tracked ones — and `resolveOccurrence` builds a scheduled end in
+ * marks too, so this reads back exactly the stored duration. Asking the elapsed
+ * question instead read 120 for a 180-minute block on the day the clocks go back,
+ * and a resize from there stored 135.
  */
 function originOf(occurrence: ResolvedOccurrence): Position {
   return {

@@ -2,7 +2,8 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addDays, dateKeyToMidnight } from '../../domain/dates';
-import type { ResolvedOccurrence } from '../../domain/types';
+import { resolveOccurrence } from '../../domain/recurrence';
+import type { BlockPlan, ResolvedOccurrence } from '../../domain/types';
 import { TimeBlockView } from './TimeBlockView';
 
 /**
@@ -92,6 +93,62 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
       label: '1:30 - 3:30',
       height: TWO_HOURS,
       top: '96px',
+    });
+  });
+});
+
+/**
+ * A plan at 01:00 for three hours, resolved for the day asked: what the calendar
+ * really draws, not a hand-built occurrence. The DST tests above build the
+ * occurrence by hand because there a tracked block is the subject; here the
+ * resolver is.
+ */
+function scheduledBlockOn(date: string, month: number, day: number): ResolvedOccurrence {
+  const plan: BlockPlan = {
+    id: 'p1',
+    title: 'Make exercise',
+    projectId: null,
+    startMinute: 60,
+    durationMinutes: 180,
+    recurrence: { type: 'none' },
+    anchorDate: date,
+    endDate: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    deletedAt: null,
+  };
+  const occurrence = resolveOccurrence(plan, null, null, date, new Date(2026, month, day, 12, 0));
+  if (occurrence === null) throw new Error('expected an occurrence');
+  return occurrence;
+}
+
+describe('TimeBlockView draws a planned block at its planned length', () => {
+  afterEach(cleanup);
+
+  // 192px is three hours at 64px/hour: the distance between the 01:00 and 04:00 marks.
+  const THREE_HOURS = '192px';
+
+  it('on an ordinary day', () => {
+    expect(draw(scheduledBlockOn('2026-10-18', 9, 18))).toEqual({
+      label: '1:00 - 4:00',
+      height: THREE_HOURS,
+      top: '64px',
+    });
+  });
+
+  it('on the day the clocks go back, which used to draw it two hours tall', () => {
+    expect(draw(scheduledBlockOn('2026-10-25', 9, 25))).toEqual({
+      label: '1:00 - 4:00',
+      height: THREE_HOURS,
+      top: '64px',
+    });
+  });
+
+  it('on the day the clocks go forward, which used to draw it four hours tall', () => {
+    expect(draw(scheduledBlockOn('2026-03-29', 2, 29))).toEqual({
+      label: '1:00 - 4:00',
+      height: THREE_HOURS,
+      top: '64px',
     });
   });
 });
