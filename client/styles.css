@@ -514,6 +514,7 @@ body {
 }
 
 .choice {
+  position: relative;
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--line);
@@ -534,6 +535,42 @@ body {
 .choice--active {
   border-color: var(--accent);
   color: var(--text);
+}
+
+/* A fieldset carries a .field's layout; the browser's own border, padding and
+   min-width would break it. The legend is not a flex item, so the gap the field
+   keeps between label and control is padding here. */
+fieldset.field {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+legend.field__label {
+  padding: 0 0 8px;
+}
+
+/* A chip that is a label around a radio. The radio stays in the tree, one pixel
+   and transparent, so it still takes focus and the arrow keys; the chip shows the
+   state through :has, since the border is on the label and not on the input. */
+.choice__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice:has(.choice__input:checked) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.choice:has(.choice__input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .block--scheduled {

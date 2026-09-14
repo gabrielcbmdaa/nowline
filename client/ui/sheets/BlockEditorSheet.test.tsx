@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockOverride, BlockPlan } from '../../domain/types';
 import { repository } from '../../storage/repository';
@@ -79,7 +79,7 @@ describe('BlockEditorSheet', () => {
     it('when a weekly repeat has no weekday left', async () => {
       newBlock();
       fill('Title', 'Make exercise');
-      fireEvent.click(screen.getByRole('button', { name: 'Weekly' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Weekly' }));
       // Weekly starts ticked on the day the block sits on, and 2026-09-03 is a
       // Thursday. Asking for it by name is what a screen reader can do too.
       fireEvent.click(screen.getByRole('button', { name: 'Thursday', pressed: true }));
@@ -152,5 +152,34 @@ describe('BlockEditorSheet', () => {
 
     expect(await screen.findByText('Could not save. Please try again.')).toBeTruthy();
     expect(reported).toHaveBeenCalledOnce();
+  });
+
+  describe('the repeat choice', () => {
+    it('is a group named Repeat, of three radios with one checked', () => {
+      newBlock();
+      const group = screen.getByRole('group', { name: 'Repeat' });
+      expect(within(group).getAllByRole('radio')).toHaveLength(3);
+      expect(within(group).getByRole('radio', { name: 'Does not repeat', checked: true })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Every day' }));
+
+      expect(screen.getByRole('radio', { name: 'Every day', checked: true })).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Does not repeat', checked: false })).toBeTruthy();
+    });
+
+    it('keeps the picked weekdays when Weekly is clicked again', () => {
+      newBlock();
+      fireEvent.click(screen.getByRole('radio', { name: 'Weekly' }));
+      // 2026-09-03 is a Thursday, ticked by default; add two more.
+      fireEvent.click(screen.getByRole('button', { name: 'Wednesday' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Friday' }));
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Weekly' }));
+
+      // Measured in Chrome on 2026-09-13: this click used to reset the week to the sheet's day.
+      for (const day of ['Wednesday', 'Thursday', 'Friday']) {
+        expect(screen.getByRole('button', { name: day, pressed: true })).toBeTruthy();
+      }
+    });
   });
 });
