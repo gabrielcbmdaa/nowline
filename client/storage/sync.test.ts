@@ -656,4 +656,28 @@ describe('a full download once damaged rows have been overwritten', () => {
     expect(send.mock.calls.map((call) => call[1])).toEqual([null, 'T1']);
     expect(await repo.readResyncOwed()).toBeNull();
   });
+
+  it('is paid by taking the cloud, which is already a full download', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    // Damage on a key the replacement overwrites: `write` raises the marker inside
+    // replaceAllFromServer, after any read the branch could have done beforehand.
+    localStorage.setItem('nowline.plans.v2', 'not json at all');
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [cloudPlan], overrides: [] },
+      rejected: [],
+    });
+
+    await settleFirstSync('take-the-cloud', { send, repo, today: () => '2026-09-14' });
+
+    expect(await repo.readResyncOwed()).toBeNull();
+    // The quarantine is untouched: paying the marker is not forgetting the damage.
+    expect(localStorage.getItem('nowline.plans.v2.corrupt')).toBe('not json at all');
+
+    send.mockResolvedValue(emptyReply('T2'));
+    await syncOnce({ send, repo });
+    // Without the clear this reads [null, null]: a second full download for nothing.
+    expect(send.mock.calls.map((call) => call[1])).toEqual([null, 'T1']);
+  });
 });

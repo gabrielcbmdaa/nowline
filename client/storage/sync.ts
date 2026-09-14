@@ -243,6 +243,13 @@ async function runSettleFirstSync(
     const downloaded =
       reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
     await repo.writeSyncState({ token: state.token, cursor: reply.serverTime, joined: true });
+    // Read AFTER the replacement, unlike runSyncOnce, and on purpose: the marker
+    // this replacement raised is already paid — the replacement is the full
+    // download, applied to every key. Reading before would leave that marker
+    // standing and cost the next round a second full download. One raised by
+    // another tab between this read and the clear survives, by the compare.
+    const owed = await repo.readResyncOwed();
+    if (owed !== null) await repo.clearResyncOwed(owed);
     return { kind: 'done', downloaded, stillOwed: 0 };
   }
 
