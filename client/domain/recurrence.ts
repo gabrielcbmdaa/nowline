@@ -1,4 +1,4 @@
-import { atMinute, compareDateKeys, weekdayOf } from './dates';
+import { addWallClockMinutes, atMinute, compareDateKeys, weekdayOf } from './dates';
 import type {
   BlockOverride,
   BlockPlan,
@@ -45,8 +45,7 @@ export function resolveOccurrence(
 ): ResolvedOccurrence | null {
   if (override?.status === 'deleted') return null;
 
-  const plannedDurationMs =
-    (override?.durationMinutes ?? plan.durationMinutes) * 60000;
+  const plannedMinutes = override?.durationMinutes ?? plan.durationMinutes;
 
   let status: ResolvedOccurrence['status'] = 'scheduled';
   let displayStart: Date;
@@ -59,13 +58,18 @@ export function resolveOccurrence(
   } else if (override?.status === 'running' && override.actualStart) {
     status = 'running';
     displayStart = new Date(override.actualStart);
-    // Sits still at its planned length, then follows the clock.
-    displayEnd = new Date(
-      Math.max(displayStart.getTime() + plannedDurationMs, now.getTime()),
-    );
+    // Sits still at its planned length, then follows the clock. The planned end
+    // is marks of the grid after the start, not milliseconds: on the two days a
+    // clock change makes different, the block has to reach the same mark as the
+    // plan it came from.
+    const plannedEnd = addWallClockMinutes(displayStart, plannedMinutes);
+    displayEnd = new Date(Math.max(plannedEnd.getTime(), now.getTime()));
   } else {
     displayStart = atMinute(date, override?.startMinute ?? plan.startMinute);
-    displayEnd = new Date(displayStart.getTime() + plannedDurationMs);
+    // Marks, not milliseconds: `TimeBlockView` measures the height in marks, and
+    // an end built by elapsed time drew a 01:00-04:00 block two hours tall on the
+    // day the clocks go back and four on the day they go forward.
+    displayEnd = addWallClockMinutes(displayStart, plannedMinutes);
   }
 
   return {

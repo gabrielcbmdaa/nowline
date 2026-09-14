@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addDays,
+  addWallClockMinutes,
   atMinute,
   wallClockMinutesBetween,
   compareDateKeys,
@@ -242,5 +243,56 @@ describe('a clock change that is not a whole hour', () => {
     // 2026-10-04 and falls 02:00 -> 01:30 on 2026-04-05.
     expect(minutesSinceMidnight(new Date(2026, 9, 4, 10, 0), '2026-10-04')).toBe(600);
     expect(minutesSinceMidnight(new Date(2026, 3, 5, 10, 0), '2026-04-05')).toBe(600);
+  });
+});
+
+describe('addWallClockMinutes moves by marks of the grid, not by elapsed time', () => {
+  it('runs where these days are not 24 hours long, or the rest proves nothing', () => {
+    expect(hoursIn('2026-03-29')).toBe(23);
+    expect(hoursIn('2026-10-25')).toBe(25);
+  });
+
+  it('is plain addition on an ordinary day, seconds and milliseconds kept', () => {
+    const end = addWallClockMinutes(new Date(2026, 8, 3, 1, 0, 30, 500), 180);
+    expect([end.getHours(), end.getMinutes(), end.getSeconds(), end.getMilliseconds()]).toEqual([
+      4, 0, 30, 500,
+    ]);
+  });
+
+  it('reaches the 04:00 mark on the day the clocks go back, after four hours of stopwatch', () => {
+    const start = new Date(2026, 9, 25, 1, 0);
+    const end = addWallClockMinutes(start, 180);
+    expect(end.getHours()).toBe(4);
+    expect(wallClockMinutesBetween(start, end, '2026-10-25')).toBe(180);
+    // The elapsed figure, for contrast: `getTime() + ms` stopped at the 03:00 mark.
+    expect((end.getTime() - start.getTime()) / 60000).toBe(240);
+  });
+
+  it('reaches the 04:00 mark on the day the clocks go forward, after two hours of stopwatch', () => {
+    const start = new Date(2026, 2, 29, 1, 0);
+    const end = addWallClockMinutes(start, 180);
+    expect(end.getHours()).toBe(4);
+    expect(wallClockMinutesBetween(start, end, '2026-03-29')).toBe(180);
+    expect((end.getTime() - start.getTime()) / 60000).toBe(120);
+  });
+
+  /**
+   * The inverse, for every quarter hour of the two changing days. The one
+   * exception is an end that lands in the hour no clock shows: it moves forward
+   * by the jump, the same rule `atMinute` follows and the round-trip test pins.
+   */
+  it('inverts wallClockMinutesBetween, except into the missing hour', () => {
+    for (const key of ['2026-03-29', '2026-10-25']) {
+      for (let startMinute = 0; startMinute < 1440; startMinute += 15) {
+        const start = atMinute(key, startMinute);
+        for (let length = 15; length <= 1440; length += 15) {
+          const marks = wallClockMinutesBetween(start, addWallClockMinutes(start, length), key);
+          const endMinute = startMinute + length;
+          const landsInTheGap =
+            key === '2026-03-29' && startMinute < 120 && endMinute >= 120 && endMinute < 180;
+          expect(marks).toBe(landsInTheGap ? length + 60 : length);
+        }
+      }
+    }
   });
 });
