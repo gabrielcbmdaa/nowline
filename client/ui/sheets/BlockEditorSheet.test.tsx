@@ -163,6 +163,19 @@ describe('BlockEditorSheet', () => {
     expect(reported).toHaveBeenCalledWith('Saving the block failed', expect.any(Error));
   });
 
+  it('reaches the generic message even when the rejection carries nothing', async () => {
+    // A bare reject() hands the catch `undefined`. Reading `.message` off that is
+    // the one way the old catch could crash inside itself and leave the sheet mute.
+    vi.spyOn(repository, 'savePlan').mockRejectedValue(undefined);
+    newBlock();
+
+    fill('Title', 'Make exercise');
+    clickSave();
+
+    expect(await screen.findByText('Could not save. Please try again.')).toBeTruthy();
+    expect(reported).toHaveBeenCalledWith('Saving the block failed', undefined);
+  });
+
   describe('the repeat choice', () => {
     it('is a group named Repeat, of three radios with one checked', () => {
       newBlock();

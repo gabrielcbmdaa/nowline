@@ -15,6 +15,9 @@ import {
 import { Sheet } from '../Sheet';
 import { minuteToTimeValue, timeValueToMinute } from '../format';
 
+/** Said once, for the planned pair and the tracked pair alike. */
+const END_AFTER_START = 'End time must be after start time';
+
 /**
  * The single letters fit seven buttons across a phone, but two of them read "T"
  * and two read "S", so the letter cannot be the name. The name carries the day.
@@ -178,7 +181,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       return;
     }
     if (endMinute <= startMinute) {
-      setError('End time must be after start time');
+      setError(END_AFTER_START);
       return;
     }
     if (startMinute < 0 || startMinute >= MINUTES_PER_DAY) {
@@ -194,9 +197,24 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       return;
     }
 
+    // The tracked pair is checked here, beside the planned one, and not by
+    // catching what correctTimes throws: the try below is for writes only.
+    let trackedTimes: { start: Date; end: Date } | null = null;
     if (tracked?.actualStart && tracked.actualEnd) {
       if (!Number.isFinite(trackedStart) || !Number.isFinite(trackedEnd)) {
         setError('Enter a start time and an end time');
+        return;
+      }
+      trackedTimes = resolveTrackedTimestamps(
+        tracked.actualStart,
+        tracked.actualEnd,
+        trackedStart,
+        trackedEnd,
+        trackedStartEdited,
+        trackedEndEdited,
+      );
+      if (trackedTimes.end.getTime() <= trackedTimes.start.getTime()) {
+        setError(END_AFTER_START);
         return;
       }
     }
@@ -222,16 +240,10 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       (override.startMinute != null || override.durationMinutes != null);
 
     try {
-      if (tracked?.actualStart && tracked.actualEnd) {
-        const { start, end } = resolveTrackedTimestamps(
-          tracked.actualStart,
-          tracked.actualEnd,
-          trackedStart,
-          trackedEnd,
-          trackedStartEdited,
-          trackedEndEdited,
-        );
-        const corrected = correctTimes(tracked, start, end);
+      if (tracked && trackedTimes) {
+        // Accepted above, so this cannot throw for the order; if it ever did, it
+        // would be the defect it is, reported below behind the generic message.
+        const corrected = correctTimes(tracked, trackedTimes.start, trackedTimes.end);
         await saveOverride(
           hasPositionalOverride
             ? { ...corrected, startMinute: null, durationMinutes: null }
@@ -251,14 +263,12 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
         });
       }
       await savePlan(next);
-      onClose();
     } catch (saveError) {
-      const message = (saveError as Error).message;
-      // Validation is an answer, not a defect: only the other half is worth reporting.
-      const isValidation = message === 'End time must be after start time';
-      if (!isValidation) reportError('Saving the block failed', saveError);
-      setError(isValidation ? message : 'Could not save. Please try again.');
+      reportError('Saving the block failed', saveError);
+      setError('Could not save. Please try again.');
+      return;
     }
+    onClose();
   }
 
   async function deleteThisDay() {
