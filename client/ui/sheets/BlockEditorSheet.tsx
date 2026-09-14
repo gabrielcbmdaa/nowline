@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addDays, dateKeyToMidnight, toDateKey, weekdayOf } from '../../domain/dates';
+import { addDays, atMinute, toDateKey, wallClockMinuteOf, weekdayOf } from '../../domain/dates';
 import { MINUTES_PER_DAY } from '../../domain/geometry';
 import { reportError } from '../../reportError';
 import { formatDuration } from '../../domain/summary';
@@ -29,18 +29,6 @@ const WEEKDAYS = [
   { value: 0, label: 'S', name: 'Sunday' },
 ];
 
-/** Hours and minutes of the local clock; seconds are not part of the field. */
-function wallClockMinute(instant: Date): number {
-  return instant.getHours() * 60 + instant.getMinutes();
-}
-
-/** Place a wall-clock minute on a calendar day, seconds cleared. */
-function atWallClock(dateKey: string, minute: number): Date {
-  const instant = dateKeyToMidnight(dateKey);
-  instant.setHours(Math.floor(minute / 60), minute % 60, 0, 0);
-  return instant;
-}
-
 /**
  * Untouched fields keep the original instant, seconds included. Edited fields
  * are rebuilt from the typed wall clock; a tracked end at or before the start
@@ -57,10 +45,10 @@ function resolveTrackedTimestamps(
   const originalStart = new Date(actualStartIso);
   const originalEnd = new Date(actualEndIso);
   const start = startEdited
-    ? atWallClock(toDateKey(originalStart), startMinute)
+    ? atMinute(toDateKey(originalStart), startMinute)
     : originalStart;
   const end = endEdited
-    ? atWallClock(
+    ? atMinute(
         endMinute > startMinute ? toDateKey(start) : addDays(toDateKey(start), 1),
         endMinute,
       )
@@ -101,10 +89,10 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [trackedStart, setTrackedStart] = useState(() =>
-    tracked?.actualStart ? wallClockMinute(new Date(tracked.actualStart)) : 0,
+    tracked?.actualStart ? wallClockMinuteOf(new Date(tracked.actualStart)) : 0,
   );
   const [trackedEnd, setTrackedEnd] = useState(() =>
-    tracked?.actualEnd ? wallClockMinute(new Date(tracked.actualEnd)) : 0,
+    tracked?.actualEnd ? wallClockMinuteOf(new Date(tracked.actualEnd)) : 0,
   );
   const [trackedStartEdited, setTrackedStartEdited] = useState(false);
   const [trackedEndEdited, setTrackedEndEdited] = useState(false);

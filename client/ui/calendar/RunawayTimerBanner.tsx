@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { addWallClockMinutes } from '../../domain/dates';
 import { RUNAWAY_TIMER_HOURS, correctTimes, runningHours } from '../../domain/timer';
 import { reportError } from '../../reportError';
 import { getRunningOverride, saveOverride, stopRunningTimer, useAppState } from '../../state/store';
@@ -27,7 +28,12 @@ export function RunawayTimerBanner({ onFixTimes }: Props) {
     if (!running?.actualStart || !plan) return;
     const durationMinutes = running.durationMinutes ?? plan.durationMinutes;
     const start = new Date(running.actualStart);
-    const end = new Date(start.getTime() + durationMinutes * 60000);
+    // Where the calendar draws the planned end: marks of the grid after the
+    // start. On the day the clocks go back that records the hour lived twice,
+    // which is what the block then shows. A start in the second pass of that
+    // hour whose planned end falls inside it gets an end at or before the
+    // start; correctTimes refuses it, the error is reported, the banner stays.
+    const end = addWallClockMinutes(start, durationMinutes);
     try {
       await saveOverride(correctTimes(running, start, end));
       setDismissedTimer(`${running.id}:${running.actualStart}`);

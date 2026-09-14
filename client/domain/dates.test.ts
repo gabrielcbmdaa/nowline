@@ -3,6 +3,7 @@ import {
   addDays,
   addWallClockMinutes,
   atMinute,
+  wallClockMinuteOf,
   wallClockMinutesBetween,
   compareDateKeys,
   dateKeyToMidnight,
@@ -292,6 +293,24 @@ describe('addWallClockMinutes moves by marks of the grid, not by elapsed time', 
             key === '2026-03-29' && startMinute < 120 && endMinute >= 120 && endMinute < 180;
           expect(marks).toBe(landsInTheGap ? length + 60 : length);
         }
+      }
+    }
+  });
+});
+
+describe("wallClockMinuteOf reads the clock on the instant's own day", () => {
+  it('drops the seconds', () => {
+    expect(wallClockMinuteOf(new Date(2026, 8, 3, 5, 30, 45))).toBe(330);
+  });
+
+  it('reads the same as the hour and minute fields on both changing days', () => {
+    for (const [month, day] of [
+      [2, 29],
+      [9, 25],
+    ]) {
+      for (let minute = 0; minute < 1440; minute += 1) {
+        const instant = new Date(2026, month, day, 0, minute, 30);
+        expect(wallClockMinuteOf(instant)).toBe(instant.getHours() * 60 + instant.getMinutes());
       }
     }
   });

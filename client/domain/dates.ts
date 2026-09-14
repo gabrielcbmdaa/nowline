@@ -74,6 +74,16 @@ export function addWallClockMinutes(start: Date, minutes: number): Date {
 }
 
 /**
+ * The minute a clock shows at `instant`, on the instant's own day, seconds
+ * dropped: what a `<input type="time">` can hold. It equals
+ * `getHours() * 60 + getMinutes()` on every minute of the year, and lives here
+ * so the wall-clock rule is not re-derived beside every time field.
+ */
+export function wallClockMinuteOf(instant: Date): number {
+  return Math.floor(minutesSinceMidnight(instant, toDateKey(instant)));
+}
+
+/**
  * The instant a minute of a day names. On the day the clocks go forward there
  * are minutes no clock shows — 02:00 to 02:59 in Madrid — and for those this
  * answers the instant one jump later, 02:30 → 03:30: what JavaScript does with
