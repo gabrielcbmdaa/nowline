@@ -22,6 +22,16 @@ export default defineConfig({
      */
     proxy: { '/api': 'http://127.0.0.1:3001' },
   },
+  preview: {
+    /**
+     * The same origin as `pnpm dev`, on purpose: the production build is looked
+     * at against the data already on this machine. Vite's default is 4173, which
+     * is another origin and therefore another, empty store. `strictPort` and the
+     * `/api` proxy are inherited from `server`; only the port is not. If dev is
+     * still up, preview refuses — one app on one origin at a time, as dev does.
+     */
+    port: 5124,
+  },
   test: {
     environment: 'node',
     // Compiled emit is not the suite, which is why dist/ is already excluded
