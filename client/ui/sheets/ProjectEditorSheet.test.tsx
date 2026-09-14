@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import type { Project } from '../../domain/types';
+
+vi.mock('../../reportError', () => ({
+  reportError: vi.fn(),
+  reportWarning: vi.fn(),
+}));
+
+import { reportError } from '../../reportError';
 import { repository } from '../../storage/repository';
 import { getState, loadAll } from '../../state/store';
 import { ProjectEditorSheet } from './ProjectEditorSheet';
+
+const reported = reportError as Mock;
 
 const health: Project = {
   id: 'health',
@@ -26,6 +36,7 @@ function clickSave(): void {
 describe('ProjectEditorSheet', () => {
   beforeEach(async () => {
     localStorage.clear();
+    reported.mockClear();
     await loadAll();
   });
 
@@ -46,8 +57,6 @@ describe('ProjectEditorSheet', () => {
   });
 
   it('tells the user when the write fails, and stays open', async () => {
-    // The failure is what is under test, so its report is expected output, not noise.
-    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(repository, 'saveProject').mockRejectedValue(new Error('storage is full'));
     const onClose = vi.fn();
     render(<ProjectEditorSheet project={null} onClose={onClose} />);
@@ -57,7 +66,7 @@ describe('ProjectEditorSheet', () => {
 
     expect(await screen.findByText('Could not save. Please try again.')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
-    expect(reported).toHaveBeenCalledOnce();
+    expect(reported).toHaveBeenCalledWith('Saving the project failed', expect.any(Error));
   });
 
   it('saves a new project through the storage seam and closes', async () => {

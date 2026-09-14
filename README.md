@@ -20,6 +20,7 @@ pnpm dev              # http://localhost:5124; add --host to open on a phone
 MONGO_URL=mongodb://127.0.0.1:27017 MONGO_DB=nowline_dev pnpm dev:server   # 127.0.0.1:3001
 pnpm test             # needs MongoDB on 127.0.0.1:27017
 pnpm build            # eslint, both type-checks, then vite build
+pnpm preview          # the production build, on the same origin as dev (stop dev first)
 ```
 
 The server refuses to start without `MONGO_URL` and `MONGO_DB` — it never defaults
