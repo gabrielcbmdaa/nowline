@@ -1,8 +1,16 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 type Props = {
   title: string;
   onClose: () => void;
+  /**
+   * Where focus goes when the sheet opens, when a field should have it — a
+   * name about to be typed. Asked for here rather than with `autoFocus` on the
+   * field: React applies `autoFocus` before the effect below records who had
+   * focus, so the sheet remembered its own input and handed focus to nothing
+   * on close. Here the record comes first, the move second.
+   */
+  initialFocus?: RefObject<HTMLElement | null>;
   children: ReactNode;
 };
 
@@ -23,9 +31,10 @@ function getFocusable(root: HTMLElement): HTMLElement[] {
 
 const mountedSheets: object[] = [];
 
-export function Sheet({ title, onClose, children }: Props) {
+export function Sheet({ title, onClose, initialFocus, children }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
+  const initialFocusRef = useRef(initialFocus);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const startedOnBackdropRef = useRef(false);
 
@@ -40,7 +49,10 @@ export function Sheet({ title, onClose, children }: Props) {
     const previous = document.activeElement;
     previousFocusRef.current = previous instanceof HTMLElement ? previous : null;
 
-    if (!panel.contains(document.activeElement)) {
+    const requested = initialFocusRef.current?.current;
+    if (requested) {
+      requested.focus();
+    } else if (!panel.contains(document.activeElement)) {
       const focusable = getFocusable(panel);
       if (focusable.length > 0) {
         focusable[0].focus();
