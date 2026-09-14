@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import type { BlockOverride, BlockPlan } from '../../domain/types';
+
+vi.mock('../../reportError', () => ({
+  reportError: vi.fn(),
+  reportWarning: vi.fn(),
+}));
+
+import { reportError } from '../../reportError';
 import { repository } from '../../storage/repository';
 import { loadAll } from '../../state/store';
 import { BlockEditorSheet } from './BlockEditorSheet';
+
+const reported = reportError as Mock;
 
 const DATE = '2026-09-03';
 
@@ -52,6 +62,7 @@ function clickSave(): void {
 describe('BlockEditorSheet', () => {
   beforeEach(async () => {
     localStorage.clear();
+    reported.mockClear();
     await loadAll();
   });
 
@@ -93,7 +104,6 @@ describe('BlockEditorSheet', () => {
   });
 
   it('keeps the precise message when a tracked correction is invalid, without reporting it', async () => {
-    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
     localStorage.setItem('nowline.plans.v2', JSON.stringify([plan]));
     localStorage.setItem('nowline.overrides.v2', JSON.stringify([trackedOverride]));
     await loadAll();
@@ -143,7 +153,6 @@ describe('BlockEditorSheet', () => {
   });
 
   it('reports an unexpected write failure behind the generic message', async () => {
-    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(repository, 'savePlan').mockRejectedValue(new Error('storage is full'));
     newBlock();
 
@@ -151,7 +160,7 @@ describe('BlockEditorSheet', () => {
     clickSave();
 
     expect(await screen.findByText('Could not save. Please try again.')).toBeTruthy();
-    expect(reported).toHaveBeenCalledOnce();
+    expect(reported).toHaveBeenCalledWith('Saving the block failed', expect.any(Error));
   });
 
   describe('the repeat choice', () => {
