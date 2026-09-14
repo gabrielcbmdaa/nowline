@@ -45,6 +45,19 @@ const trackedOverride: BlockOverride = {
   updatedAt: new Date(2026, 8, 3, 10, 0, 0).toISOString(),
 };
 
+/** Dragged to 10:00 on its day: the editor shows that time and clears it on save. */
+const draggedOverride: BlockOverride = {
+  id: 'o1',
+  planId: 'p1',
+  date: DATE,
+  status: 'scheduled',
+  actualStart: null,
+  actualEnd: null,
+  startMinute: 10 * 60,
+  durationMinutes: 60,
+  updatedAt: '2026-09-02T00:00:00.000Z',
+};
+
 function newBlock() {
   return render(
     <BlockEditorSheet planId={null} date={DATE} defaultStartMinute={9 * 60} onClose={() => {}} />,
@@ -174,6 +187,61 @@ describe('BlockEditorSheet', () => {
 
     expect(await screen.findByText('Could not save. Please try again.')).toBeTruthy();
     expect(reported).toHaveBeenCalledWith('Saving the block failed', undefined);
+  });
+
+  describe('a save that writes two rows', () => {
+    async function openDraggedDay(onClose: () => void): Promise<void> {
+      localStorage.setItem('nowline.plans.v2', JSON.stringify([plan]));
+      localStorage.setItem('nowline.overrides.v2', JSON.stringify([draggedOverride]));
+      await loadAll();
+      render(
+        <BlockEditorSheet planId="p1" date={DATE} defaultStartMinute={9 * 60} onClose={onClose} />,
+      );
+    }
+
+    function storedDay(): BlockOverride {
+      const rows = JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]') as BlockOverride[];
+      return rows[0];
+    }
+
+    it('says nothing was saved when the day itself could not be written', async () => {
+      vi.spyOn(repository, 'saveOverride').mockRejectedValue(new Error('storage is full'));
+      const savedPlan = vi.spyOn(repository, 'savePlan');
+      const onClose = vi.fn();
+      await openDraggedDay(onClose);
+
+      fill('Title', 'Renamed');
+      clickSave();
+
+      expect(await screen.findByText('Could not save. Please try again.')).toBeTruthy();
+      expect(savedPlan).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      // The day still shadows its plan: nothing reached the disk.
+      expect(storedDay().startMinute).toBe(10 * 60);
+      expect(reported).toHaveBeenCalledWith('Saving the block failed', expect.any(Error));
+    });
+
+    it('says only part was saved when the day was written and the plan was not', async () => {
+      vi.spyOn(repository, 'savePlan').mockRejectedValue(new Error('storage is full'));
+      const onClose = vi.fn();
+      await openDraggedDay(onClose);
+
+      fill('Title', 'Renamed');
+      clickSave();
+
+      expect(
+        await screen.findByText('Only part of the change was saved. Please try again.'),
+      ).toBeTruthy();
+      expect(onClose).not.toHaveBeenCalled();
+      // The day's own position is gone — it follows its plan now, which the app can
+      // always show — and the plan kept its old title. The message has to say so.
+      expect(storedDay().startMinute).toBeNull();
+      expect(storedDay().durationMinutes).toBeNull();
+      expect(reported).toHaveBeenCalledWith(
+        'Saving the block failed after its day was written',
+        expect.any(Error),
+      );
+    });
   });
 
   describe('the repeat choice', () => {

@@ -239,6 +239,13 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
       override != null &&
       (override.startMinute != null || override.durationMinutes != null);
 
+    // Two writes, two keys, no transaction: the same stance as deletePlan. The
+    // override goes first on purpose. If the plan then fails, the residue is a
+    // day that follows its plan — a state the app can show at any time. The
+    // other order leaves a stale shadow: every day moved and this one kept old
+    // numbers, invisibly so when the time was not changed. The flag is what
+    // lets the message below tell the two failures apart.
+    let dayWritten = false;
     try {
       if (tracked && trackedTimes) {
         // Accepted above, so this cannot throw for the order; if it ever did, it
@@ -249,6 +256,7 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
             ? { ...corrected, startMinute: null, durationMinutes: null }
             : corrected,
         );
+        dayWritten = true;
       } else if (override && hasPositionalOverride) {
         await saveOverride({
           id: override.id,
@@ -261,11 +269,17 @@ export function BlockEditorSheet({ planId, date, defaultStartMinute, onClose }: 
           durationMinutes: null,
           updatedAt: now,
         });
+        dayWritten = true;
       }
       await savePlan(next);
     } catch (saveError) {
-      reportError('Saving the block failed', saveError);
-      setError('Could not save. Please try again.');
+      if (dayWritten) {
+        reportError('Saving the block failed after its day was written', saveError);
+        setError('Only part of the change was saved. Please try again.');
+      } else {
+        reportError('Saving the block failed', saveError);
+        setError('Could not save. Please try again.');
+      }
       return;
     }
     onClose();
