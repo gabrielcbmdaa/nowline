@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { PROJECT_COLORS, type Project } from '../../domain/types';
 import { reportError } from '../../reportError';
 import { deleteProject, newId, saveProject, useAppState } from '../../state/store';
@@ -11,6 +11,7 @@ type Props = {
 
 export function ProjectEditorSheet({ project, onClose }: Props) {
   const state = useAppState();
+  const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(project?.name ?? '');
   const [color, setColor] = useState(project?.color ?? PROJECT_COLORS[0]);
   const [error, setError] = useState<string | null>(null);
@@ -54,14 +55,22 @@ export function ProjectEditorSheet({ project, onClose }: Props) {
     }
   }
 
+  // Creating a project starts by naming it, so the keyboard is wanted at once
+  // (6424bf2 left it that way on purpose). Editing usually means the colour, and
+  // the keyboard would only cover the swatches: focus stays on the close button
+  // and returns to the row that opened the sheet.
   return (
-    <Sheet title={project ? 'Edit project' : 'New project'} onClose={onClose}>
+    <Sheet
+      title={project ? 'Edit project' : 'New project'}
+      onClose={onClose}
+      initialFocus={project === null ? nameRef : undefined}
+    >
       <label className="field">
         <span className="field__label">Name</span>
         <input
+          ref={nameRef}
           className="field__input"
           value={name}
-          autoFocus
           placeholder="Health"
           onChange={(event) => {
             setName(event.target.value);
