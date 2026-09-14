@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
+
+vi.mock('../reportError', () => ({
+  reportError: vi.fn(),
+  reportWarning: vi.fn(),
+}));
+
+import { reportWarning } from '../reportError';
 import { LocalStorageRepository } from './localStorageRepository';
+
+const warned = reportWarning as Mock;
 
 const FROZEN = '2026-09-07T10:00:00.000Z';
 const frozenClock = () => new Date(FROZEN);
@@ -60,6 +70,7 @@ describe('LocalStorageRepository', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    warned.mockClear();
     repo = new LocalStorageRepository();
   });
 
@@ -188,16 +199,12 @@ describe('LocalStorageRepository', () => {
   });
 
   it('recovers from corrupt storage instead of crashing, and says so', async () => {
-    // Silenced on purpose: the warning is the point of the test, not noise from it.
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // The live v2 key, not the legacy one: this covers the read path every save and
     // load goes through, not the one-time migration's copy of legacy rows.
     localStorage.setItem('nowline.projects.v2', 'not json at all');
 
     expect(await new LocalStorageRepository().listProjects()).toEqual([]);
-    expect(warn).toHaveBeenCalledOnce();
-
-    warn.mockRestore();
+    expect(warned).toHaveBeenCalledOnce();
   });
 
   it('drops a null entry instead of returning it', async () => {
@@ -502,7 +509,6 @@ describe('LocalStorageRepository', () => {
   });
 
   it('treats a corrupt queue as every stored row still being owed', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
@@ -524,8 +530,6 @@ describe('LocalStorageRepository', () => {
       plans: ['p1'],
       overrides: ['o-2026-09-03'],
     });
-
-    warn.mockRestore();
   });
 
   it('treats a missing queue as nothing pending, even when rows exist', async () => {
@@ -544,7 +548,6 @@ describe('LocalStorageRepository', () => {
   });
 
   it('treats an empty-string queue as every stored row still being owed, and warns', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
@@ -557,16 +560,13 @@ describe('LocalStorageRepository', () => {
       plans: ['p1'],
       overrides: ['o-2026-09-03'],
     });
-    expect(warn).toHaveBeenCalled();
-    const message = String(warn.mock.calls[0][0]);
+    expect(warned).toHaveBeenCalled();
+    const message = String(warned.mock.calls[0][0]);
     expect(message).toContain('nowline.pending.v1');
     expect(message).toContain('treating every stored row as owed');
-
-    warn.mockRestore();
   });
 
   it('treats a queue whose kinds are not all arrays as every stored row still being owed', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
@@ -579,12 +579,9 @@ describe('LocalStorageRepository', () => {
       plans: ['p1'],
       overrides: ['o-2026-09-03'],
     });
-
-    warn.mockRestore();
   });
 
   it('treats a queue holding a non-string id as every stored row still being owed', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
@@ -600,16 +597,13 @@ describe('LocalStorageRepository', () => {
       plans: ['p1'],
       overrides: ['o-2026-09-03'],
     });
-    expect(warn).toHaveBeenCalled();
-    const message = String(warn.mock.calls[0][0]);
+    expect(warned).toHaveBeenCalled();
+    const message = String(warned.mock.calls[0][0]);
     expect(message).toContain('nowline.pending.v1');
     expect(message).toContain('treating every stored row as owed');
-
-    warn.mockRestore();
   });
 
   it('treats a JSON array stored as the queue as every stored row still being owed', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
@@ -622,8 +616,6 @@ describe('LocalStorageRepository', () => {
       plans: ['p1'],
       overrides: ['o-2026-09-03'],
     });
-
-    warn.mockRestore();
   });
 
   it('keeps a queue that legitimately holds empty arrays', async () => {
@@ -644,7 +636,6 @@ describe('LocalStorageRepository', () => {
   });
 
   it('warns when recovering a corrupt queue, naming the damage and the repair', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
 
@@ -656,36 +647,31 @@ describe('LocalStorageRepository', () => {
     ];
 
     for (const raw of shapes) {
-      warn.mockClear();
+      warned.mockClear();
       localStorage.setItem('nowline.pending.v1', raw);
       await repoAt.listPending();
-      expect(warn).toHaveBeenCalled();
-      const message = String(warn.mock.calls[0][0]);
+      expect(warned).toHaveBeenCalled();
+      const message = String(warned.mock.calls[0][0]);
       expect(message).toContain('nowline.pending.v1');
       expect(message).toContain('treating every stored row as owed');
     }
-
-    warn.mockRestore();
   });
 
   it('does not warn when the queue is missing or holds empty arrays', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
 
     localStorage.removeItem('nowline.pending.v1');
     await repoAt.listPending();
-    expect(warn).not.toHaveBeenCalled();
+    expect(warned).not.toHaveBeenCalled();
 
     localStorage.setItem(
       'nowline.pending.v1',
       JSON.stringify({ projects: [], plans: ['p1'], overrides: [] }),
     );
     await repoAt.listPending();
-    expect(warn).not.toHaveBeenCalled();
-
-    warn.mockRestore();
+    expect(warned).not.toHaveBeenCalled();
   });
 
   it('hands over a deleted row so the deletion can travel', async () => {
@@ -721,7 +707,6 @@ describe('LocalStorageRepository', () => {
   });
 
   it('rewrites a recovered queue on the next save, so later reads see the healed key', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const repoAt = new LocalStorageRepository(frozenClock);
     await repoAt.saveProject(project);
     await repoAt.savePlan(plan);
@@ -736,8 +721,6 @@ describe('LocalStorageRepository', () => {
       plans: ['p1'],
       overrides: ['o-2026-09-03'],
     });
-
-    warn.mockRestore();
   });
 
   it('still queues a saved project when the row write is the one that fills storage', async () => {
