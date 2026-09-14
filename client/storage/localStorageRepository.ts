@@ -241,15 +241,6 @@ export class LocalStorageRepository implements BlockRepository {
     this.write(OVERRIDES_KEY, upsert(rows, this.touch(override, rows)));
   }
 
-  async deleteOverride(id: string): Promise<void> {
-    this.ensureMigrated();
-    this.write(
-      OVERRIDES_KEY,
-      this.read<BlockOverride>(OVERRIDES_KEY).filter((o) => o.id !== id),
-    );
-    this.unmarkPending('overrides', [id]);
-  }
-
   /**
    * Sync uploads what the queue lists, and nothing else. A corrupt queue
    * is therefore a lost upload, not an extra one: those rows stay unsent

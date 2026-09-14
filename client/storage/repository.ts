@@ -27,7 +27,6 @@ export interface BlockRepository {
   /** Omit the range to read every override. */
   listOverrides(fromDate?: string, toDate?: string): Promise<BlockOverride[]>;
   saveOverride(override: BlockOverride): Promise<void>;
-  deleteOverride(id: string): Promise<void>;
 
   listPending(): Promise<PendingIds>;
   rowsToUpload(pending: PendingIds): Promise<SyncChanges>;

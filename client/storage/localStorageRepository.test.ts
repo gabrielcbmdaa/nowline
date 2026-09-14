@@ -489,18 +489,6 @@ describe('LocalStorageRepository', () => {
     expect(pending.overrides).toEqual([]);
   });
 
-  it('drops an override from the queue when the override itself is deleted', async () => {
-    const repoAt = new LocalStorageRepository(frozenClock);
-    await repoAt.savePlan(plan);
-    await repoAt.saveOverride(override('2026-09-03'));
-
-    await repoAt.deleteOverride('o-2026-09-03');
-
-    const pending = await repoAt.listPending();
-    expect(pending.plans).toEqual(['p1']);
-    expect(pending.overrides).toEqual([]);
-  });
-
   it('hands back independent pending arrays so a caller cannot poison later reads', async () => {
     const first = await repo.listPending();
     first.plans.push('ghost');
@@ -827,19 +815,6 @@ describe('LocalStorageRepository', () => {
         plans?: string[];
       } | null;
       expect(pending?.plans).toEqual(['p1']);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it('still drops a deleted override from storage when the queue write is the one that fills storage', async () => {
-    const repoAt = new LocalStorageRepository(frozenClock);
-    await repoAt.saveOverride(override('2026-09-03'));
-
-    const spy = throwWhenWriting('nowline.pending.v1');
-    try {
-      await expect(repoAt.deleteOverride('o-2026-09-03')).rejects.toThrow('quota exceeded');
-      expect(JSON.parse(localStorage.getItem('nowline.overrides.v2') ?? '[]')).toEqual([]);
     } finally {
       spy.mockRestore();
     }
