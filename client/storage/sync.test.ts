@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BlockPlan } from '../domain/types';
+
+vi.mock('../reportError', () => ({
+  reportError: vi.fn(),
+  reportWarning: vi.fn(),
+}));
+
 import { LocalStorageRepository } from './localStorageRepository';
 import { firstSyncDecision, inspectFirstSync, settleFirstSync, syncOnce } from './sync';
 
@@ -623,13 +629,31 @@ describe('a full download once damaged rows have been overwritten', () => {
 
     await syncOnce({ send, repo });
     expect(send.mock.calls[0][1]).toBe('T0');
-    // Cleared by the wall clock, this would be gone: the round wrote the state
-    // back after the overwrite. The compare keeps it.
+    // This round read no marker, so it clears none: a round only ever clears
+    // the value it read at its start. Clearing whatever stands at the end
+    // would drop the marker the overwrite just raised — and that is the
+    // mutation this line goes red under.
     expect(await repo.readResyncOwed()).not.toBeNull();
 
     send.mockResolvedValue(emptyReply('T2'));
     await syncOnce({ send, repo });
     expect(send.mock.calls[1][1]).toBeNull();
+    expect(await repo.readResyncOwed()).toBeNull();
+  });
+
+  it('treats a damaged marker as owed: one full download, then it is gone', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    // Anything but null means owed — the spec's rule for a marker that is not
+    // even a date. A round that validated the stamp would skip the download
+    // and, if it still ran the clear, drop the marker without paying it.
+    localStorage.setItem('nowline.resync.v1', 'not-a-date');
+    const send = vi.fn().mockResolvedValue(emptyReply('T1'));
+
+    await syncOnce({ send, repo });
+    await syncOnce({ send, repo });
+
+    expect(send.mock.calls.map((call) => call[1])).toEqual([null, 'T1']);
     expect(await repo.readResyncOwed()).toBeNull();
   });
 });
