@@ -354,9 +354,13 @@ body {
   right: 0;
   padding: 2px 0 2px 8px;
   pointer-events: none;
+  z-index: 2;
 }
 
 .day__label {
+  display: inline-block;
+  padding: 0 4px;
+  background: var(--bg);
   font-size: 11px;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -385,10 +389,11 @@ body {
   left: 56px;
   right: 8px;
   /* A block that runs past midnight overflows into the next day's section, which
-     comes later in the document and would otherwise paint its hour lines and its
-     date label over the overhang. One step is enough: day sections set no z-index
-     of their own, so blocks still stack among themselves by start time, and the
-     now-line at 5 still sits on top of everything. */
+     comes later in the document and would otherwise paint its hour lines over the
+     overhang. Day sections set no z-index of their own, so blocks still stack among
+     themselves by start time. The next day's date label sits above the overhang
+     (.day__separator at 2, on the page background); the now-line at 5 still sits
+     on top of everything. */
   z-index: 1;
   border-radius: 14px;
   /* Only a floor: align-items keeps the content centred in taller blocks. */
