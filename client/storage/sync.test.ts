@@ -57,7 +57,7 @@ describe('inspectFirstSync', () => {
 
   it('asks when both sides hold rows, and changes nothing', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
 
     const send = vi.fn().mockResolvedValue({
@@ -75,12 +75,12 @@ describe('inspectFirstSync', () => {
     expect(send.mock.calls[0][2]).toEqual({ projects: [], plans: [], overrides: [] });
     // Looking must not answer the question for the owner: a `joined: true`
     // written here would let the next wakeup merge before he chose.
-    expect(await repo.readSyncState()).toEqual({ token: 'abc', cursor: null, joined: false });
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: null, cursor: null, joined: false });
   });
 
   it('settles by itself when the cloud is empty', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
 
     const send = vi.fn().mockResolvedValue({
@@ -94,7 +94,7 @@ describe('inspectFirstSync', () => {
 
   it('passes a network failure through instead of guessing', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null });
 
     // Guessing "the cloud is empty" from silence is how a device uploads over
@@ -104,7 +104,7 @@ describe('inspectFirstSync', () => {
 
   it('does not ask again once the question has been answered', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T1', joined: true });
     await repo.savePlan({ ...plan, id: 'mine' });
     const send = vi.fn();
 
@@ -116,7 +116,7 @@ describe('inspectFirstSync', () => {
 
   it('does not wait behind a round when the device already joined', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T1', joined: true });
     let releaseSend: () => void = () => {};
     const send = vi.fn().mockImplementation(
       () =>
@@ -152,7 +152,7 @@ describe('settleFirstSync', () => {
 
   it('uploads everything this device holds when the owner keeps his own', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
     await repo.clearPending({ projects: [], plans: ['mine'], overrides: [] });
 
@@ -170,7 +170,7 @@ describe('settleFirstSync', () => {
 
   it('keeps a copy of the local rows before taking the cloud', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
 
     const send = vi.fn().mockResolvedValue({
@@ -191,7 +191,7 @@ describe('settleFirstSync', () => {
 
   it('does not mark the device joined when the round failed', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null });
 
     await settleFirstSync('upload-mine', { send, repo });
@@ -203,7 +203,7 @@ describe('settleFirstSync', () => {
 
   it('does not claim the device joined until the round has gone through', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
 
     let seenDuringTheRound: boolean | null = null;
     const send = vi.fn().mockImplementation(async () => {
@@ -221,7 +221,7 @@ describe('settleFirstSync', () => {
 
   it('leaves the flag alone when the settling round fails', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     let seenDuringTheRound: boolean | null = null;
     const send = vi.fn().mockImplementation(async () => {
       seenDuringTheRound = (await repo.readSyncState()).joined;
@@ -238,7 +238,7 @@ describe('settleFirstSync', () => {
 
   it('refuses to act on "ask the owner", which is not a decision', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
     const send = vi.fn();
 
@@ -249,7 +249,7 @@ describe('settleFirstSync', () => {
 
   it('does not put back a token the server has just rejected', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'stale', cursor: 'T1', joined: false });
+    await repo.writeSyncState({ token: 'stale', userId: null, cursor: 'T1', joined: false });
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401 });
 
     await settleFirstSync('upload-mine', { send, repo });
@@ -264,7 +264,7 @@ describe('settleFirstSync', () => {
 
   it('refuses to take a cloud that holds nothing', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
     const send = vi.fn().mockResolvedValue({
       serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [],
@@ -281,7 +281,7 @@ describe('settleFirstSync', () => {
 
   it('says how many rows taking the cloud brought down', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     await repo.savePlan({ ...plan, id: 'mine' });
     const send = vi.fn().mockResolvedValue({
       serverTime: 'T1',
@@ -312,7 +312,7 @@ describe('syncOnce', () => {
 
   it('refuses to sync until the first-sync question has been settled', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     const send = vi.fn();
 
     const outcome = await syncOnce({ send, repo });
@@ -325,7 +325,7 @@ describe('syncOnce', () => {
 
   it('syncs normally once it has been settled', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
     const send = vi.fn().mockResolvedValue({
       serverTime: 'T1',
       changes: { projects: [], plans: [], overrides: [] },
@@ -340,7 +340,7 @@ describe('syncOnce', () => {
 
   it('sends what is owed and remembers the cursor it was handed', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
     await repo.savePlan({ ...plan, id: 'p1' });
 
     const send = vi.fn().mockResolvedValue(emptyReply('2026-09-09T20:00:00.000Z'));
@@ -353,7 +353,7 @@ describe('syncOnce', () => {
 
   it('keeps the cursor it had when the network is down', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T1', joined: true });
 
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null });
     const outcome = await syncOnce({ send, repo });
@@ -365,7 +365,7 @@ describe('syncOnce', () => {
 
   it('keeps a rejected row in the queue', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
     await repo.savePlan({ ...plan, id: 'p1' });
 
     const send = vi.fn().mockResolvedValue({ ...emptyReply('T2'), rejected: ['p1'] });
@@ -379,7 +379,7 @@ describe('syncOnce', () => {
 
   it('writes down what came back', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
 
     const send = vi.fn().mockResolvedValue({
       serverTime: 'T3',
@@ -394,19 +394,19 @@ describe('syncOnce', () => {
 
   it('forgets the token when the server stops accepting it', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'stale', cursor: 'T1', joined: true });
+    await repo.writeSyncState({ token: 'stale', userId: null, cursor: 'T1', joined: true });
 
     const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401 });
     await syncOnce({ send, repo });
 
     // Keeping it means every later round spends a request proving it is dead.
     // The cursor stays: the rows already downloaded are still downloaded.
-    expect(await repo.readSyncState()).toEqual({ token: null, cursor: 'T1', joined: true });
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: null, cursor: 'T1', joined: true });
   });
 
   it('confirms against the stamps it sent, not the ones it finds afterwards', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
     await repo.savePlan({ ...plan, id: 'p1', title: 'version A' });
 
     // The edit lands while the request is in the air, which is the only moment
@@ -429,7 +429,7 @@ describe('engine door', () => {
 
   it('does not let a look run while a round is still going', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
 
     const order: string[] = [];
     let releaseSettle: (value: unknown) => void = () => {};
@@ -463,7 +463,7 @@ describe('engine door', () => {
 
   it('makes a settle wait for a round that is already going', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
 
     const order: string[] = [];
     let releaseRound: (value: unknown) => void = () => {};
@@ -494,7 +494,7 @@ describe('engine door', () => {
 
   it('opens the door again after an operation throws', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: true });
 
     const send = vi
       .fn()
@@ -511,7 +511,7 @@ describe('engine door', () => {
 
   it('lets a settle finish even though it runs a round inside itself', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     const send = vi.fn().mockResolvedValue({
       serverTime: 'T1', changes: { projects: [], plans: [], overrides: [] }, rejected: [],
     });
@@ -525,7 +525,7 @@ describe('engine door', () => {
 
   it('holds the door across the whole body, not only the network call', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
 
     const order: string[] = [];
     let release: (value: unknown) => void = () => {};
@@ -564,7 +564,7 @@ describe('a full download once damaged rows have been overwritten', () => {
 
   it('sends no cursor while a download is owed, and the lost row comes back', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T0', joined: true });
     // A blob this device cannot read, overwritten by an ordinary save: the
     // marker is raised by that write, not by the read that found the damage.
     localStorage.setItem('nowline.plans.v2', 'not json at all');
@@ -585,7 +585,7 @@ describe('a full download once damaged rows have been overwritten', () => {
 
   it('pays the download once: the next round sends the stored cursor', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T0', joined: true });
     localStorage.setItem('nowline.plans.v2', 'not json at all');
     await repo.savePlan({ ...plan, id: 'mine' });
     const send = vi.fn().mockResolvedValue(emptyReply('T1'));
@@ -599,7 +599,7 @@ describe('a full download once damaged rows have been overwritten', () => {
 
   it('keeps a marker raised while the round was in flight, and pays it next time', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T0', joined: true });
     // The damage sits on a key nothing has written to yet, so no download is
     // owed when the round starts...
     localStorage.setItem('nowline.overrides.v2', 'not json at all');
@@ -643,7 +643,7 @@ describe('a full download once damaged rows have been overwritten', () => {
 
   it('treats a damaged marker as owed: one full download, then it is gone', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: 'T0', joined: true });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T0', joined: true });
     // Anything but null means owed — the spec's rule for a marker that is not
     // even a date. A round that validated the stamp would skip the download
     // and, if it still ran the clear, drop the marker without paying it.
@@ -659,7 +659,7 @@ describe('a full download once damaged rows have been overwritten', () => {
 
   it('is paid by taking the cloud, which is already a full download', async () => {
     const repo = new LocalStorageRepository();
-    await repo.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     // Damage on a key the replacement overwrites: `write` raises the marker inside
     // replaceAllFromServer, after any read the branch could have done beforehand.
     localStorage.setItem('nowline.plans.v2', 'not json at all');
@@ -679,5 +679,58 @@ describe('a full download once damaged rows have been overwritten', () => {
     await syncOnce({ send, repo });
     // Without the clear this reads [null, null]: a second full download for nothing.
     expect(send.mock.calls.map((call) => call[1])).toEqual([null, 'T1']);
+  });
+});
+
+describe('the account the device holds', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('keeps the account when the server stops accepting the token', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'stale', userId: 'u1', cursor: 'T1', joined: true });
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401 });
+
+    await syncOnce({ send, repo });
+
+    // A dead token is not a different owner. Forgetting the account here would
+    // make the same person's next sign-in ask whose rows these are.
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+  });
+
+  it('keeps the account when a round goes through', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    const send = vi.fn().mockResolvedValue(emptyReply('T2'));
+
+    await syncOnce({ send, repo });
+
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T2', joined: true });
+  });
+
+  it('keeps the account when the owner takes the cloud', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'mine' });
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [{ ...plan, id: 'theirs' }], overrides: [] },
+      rejected: [],
+    });
+
+    await settleFirstSync('take-the-cloud', { send, repo, today: () => '2026-09-14' });
+
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+  });
+
+  it('keeps the account when the owner uploads his own', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: null, joined: false });
+    const send = vi.fn().mockResolvedValue(emptyReply('T1'));
+
+    await settleFirstSync('upload-mine', { send, repo });
+
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
   });
 });

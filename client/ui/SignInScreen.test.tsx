@@ -41,7 +41,7 @@ describe('SignInScreen', () => {
 
   it('does not touch the joined flag when it stores a token', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token' });
-    await repository.writeSyncState({ token: null, cursor: 'T1', joined: true });
+    await repository.writeSyncState({ token: null, userId: null, cursor: 'T1', joined: true });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
     typeInto('Username', 'gabriel');
@@ -54,7 +54,7 @@ describe('SignInScreen', () => {
     // once-in-a-lifetime question a second time, and one of its answers throws
     // away everything written since.
     const state = await repository.readSyncState();
-    expect(state).toEqual({ token: 'a-real-token', cursor: 'T1', joined: true });
+    expect(state).toEqual({ token: 'a-real-token', userId: null, cursor: 'T1', joined: true });
   });
 
   it('says the password was refused, and keeps what was typed', async () => {
@@ -142,6 +142,6 @@ describe('SignInScreen', () => {
     // A fresh device has never answered the first-sync question. Writing
     // `joined: true` here would skip it, and the engine would start merging
     // before the owner chose what to keep.
-    expect(await repository.readSyncState()).toEqual({ token: 'a-real-token', cursor: null, joined: false });
+    expect(await repository.readSyncState()).toEqual({ token: 'a-real-token', userId: null, cursor: null, joined: false });
   });
 });

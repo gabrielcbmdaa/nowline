@@ -93,7 +93,8 @@ async function runSyncOnce(
   const send = deps.send ?? apiClient.sync;
   const repo = deps.repo ?? liveRepository;
 
-  const { token, cursor, joined } = await repo.readSyncState();
+  const state = await repo.readSyncState();
+  const { token, cursor, joined } = state;
   if (token === null) return { kind: 'unauthorized' };
 
   // The engine never answers the first-sync question on its own. Section 9 of
@@ -123,7 +124,7 @@ async function runSyncOnce(
     if (reply.kind === 'unauthorized') {
       // Drop the dead token, keep the cursor: the rows already downloaded are
       // still downloaded, and a password prompt should not cost a full resync.
-      await repo.writeSyncState({ token: null, cursor, joined });
+      await repo.writeSyncState({ ...state, token: null });
       return { kind: 'unauthorized' };
     }
     if (reply.kind === 'offline') return { kind: 'offline' };
@@ -144,7 +145,7 @@ async function runSyncOnce(
     overrides: keep(sent.overrides),
   });
 
-  await repo.writeSyncState({ token, cursor: reply.serverTime, joined });
+  await repo.writeSyncState({ ...state, cursor: reply.serverTime });
 
   // Cleared only if it is still the marker this round read: one raised while
   // the round was in flight is newer, survives, and the next round pays it.
@@ -242,7 +243,7 @@ async function runSettleFirstSync(
     await repo.replaceAllFromServer(reply.changes);
     const downloaded =
       reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
-    await repo.writeSyncState({ token: state.token, cursor: reply.serverTime, joined: true });
+    await repo.writeSyncState({ ...state, cursor: reply.serverTime, joined: true });
     // Read AFTER the replacement, unlike runSyncOnce, and on purpose: the marker
     // this replacement raised is already paid — the replacement is the full
     // download, applied to every key. Reading before would leave that marker

@@ -33,7 +33,7 @@ describe('deciding what the app shows', () => {
   });
 
   it('does not show the first-sync question to a device that already joined', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: 'T1', joined: true });
     look.mockResolvedValue({ kind: 'already-joined' });
 
     await decideEntry();
@@ -49,7 +49,7 @@ describe('deciding what the app shows', () => {
     await decideEntry();
     expect(getState().entry).toBe('signed-out');
 
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockReturnValue(new Promise(() => {}));
 
     void decideEntry();
@@ -58,7 +58,7 @@ describe('deciding what the app shows', () => {
   });
 
   it('asks when both sides hold rows, and carries the counts to the screen', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'ask', local: 34, remote: 120 });
 
     await decideEntry();
@@ -68,7 +68,7 @@ describe('deciding what the app shows', () => {
   });
 
   it('carries out a recommendation instead of treating it as done', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'settled', choice: 'upload-mine' });
     settle.mockResolvedValue({ kind: 'done', downloaded: 0, stillOwed: 0 });
 
@@ -80,7 +80,7 @@ describe('deciding what the app shows', () => {
   });
 
   it('does not call itself ready when the recommendation could not be carried out', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'settled', choice: 'upload-mine' });
     settle.mockResolvedValue({ kind: 'offline' });
 
@@ -91,7 +91,7 @@ describe('deciding what the app shows', () => {
   });
 
   it('goes back to signing in when the token stops working', async () => {
-    await repository.writeSyncState({ token: 'stale', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'stale', userId: null, cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'unauthorized' });
 
     await decideEntry();
@@ -99,13 +99,14 @@ describe('deciding what the app shows', () => {
     expect(getState().entry).toBe('signed-out');
     expect(await repository.readSyncState()).toEqual({
       token: 'stale',
+      userId: null,
       cursor: null,
       joined: false,
     });
   });
 
   it('does not claim to be ready when nobody answered', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'offline' });
 
     await decideEntry();
@@ -118,7 +119,7 @@ describe('deciding what the app shows', () => {
   });
 
   it('shows the rows a carried-out recommendation brought down', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockResolvedValue({ kind: 'settled', choice: 'take-the-cloud' });
     // The real settle writes the cloud's rows into storage and repaints
     // nothing. Stand in for that with one row, so the store has to notice.
