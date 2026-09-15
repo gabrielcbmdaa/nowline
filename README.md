@@ -43,6 +43,32 @@ behind nginx's `location /api/`; its configuration lives in a `.env` on the mach
 not in this repository. Host, user
 and path live in repository secrets.
 
+The `/api/auth/` routes sit behind an nginx `limit_req` as well — coarse on purpose:
+the real rules live in Express, where they are tested, and this stops a flood before it
+costs Node and Mongo a round trip. In `/etc/nginx/sites-available/nowline`, above the
+`server` block (Ubuntu includes `sites-enabled` inside `http`, so that is the `http`
+context; the zone is named for this site because Switchat's vhost shares it):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=nowline_auth:1m rate=30r/m;
+```
+
+and inside `server`, next to `location /api/` (the longest prefix wins; 503 is nginx's
+default, and the client reads 429 as "too many attempts"):
+
+```nginx
+location /api/auth/ {
+    limit_req zone=nowline_auth burst=10 nodelay;
+    limit_req_status 429;
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
 ## How it works
 
 Everything is local first: the calendar reads and writes on this device, and a

@@ -10,6 +10,10 @@ import { syncRoute } from './routes/sync.js';
  */
 export function createApp(db: Db): express.Express {
   const app = express();
+  // Trust X-Forwarded-For only when the connection itself comes from this
+  // machine, which is where nginx connects from. `true` would let anyone send
+  // the header from outside with a made-up address and dodge every per-IP limit.
+  app.set('trust proxy', 'loopback');
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/api/health', (_request, response) => {

@@ -51,3 +51,12 @@ export async function countAttempt(db: Db, key: string, limit: Limit): Promise<b
 export async function forgetAttempts(db: Db, key: string): Promise<void> {
   await collections(db).attempts.deleteOne({ key });
 }
+
+/**
+ * The address a per-IP key counts against. `request.ip` honours
+ * `X-Forwarded-For` only from a trusted proxy (`trust proxy` in index.ts), and
+ * is undefined once a socket is gone; a missing address still needs a key.
+ */
+export function ipOf(request: { ip: string | undefined }): string {
+  return request.ip ?? 'unknown';
+}

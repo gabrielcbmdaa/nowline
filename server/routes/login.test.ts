@@ -8,8 +8,8 @@ import { insertUser } from '../testing/accounts.js';
 import { call } from '../testing/http.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
-const post = (db: Db, path: string, body: unknown) =>
-  call(createApp(db), path, { method: 'POST', body });
+const post = (db: Db, path: string, body: unknown, headers?: Record<string, string>) =>
+  call(createApp(db), path, { method: 'POST', body, headers });
 
 const gabriel = { email: 'gabriel@example.com', password: 'correct horse' };
 
@@ -213,4 +213,39 @@ describe('login', () => {
 
     expect(response.status).toBe(401);
   });
+
+  it(
+    'limits attempts per IP across addresses, keeps counting after a success, and tells IPs apart',
+    { timeout: 40_000 },
+    async () => {
+      const db = await withTestDb();
+      await insertUser(db, gabriel);
+
+      for (let attempt = 0; attempt < LIMITS.loginIp.max - 1; attempt += 1) {
+        const guess = await post(db, '/api/auth/login', {
+          email: `guess${attempt}@example.com`,
+          password: 'wrong',
+        });
+        expect(guess.status).toBe(401);
+      }
+      // The 30th attempt from this IP, and a right one: it gets in, and forgets
+      // only the address's own count, never the IP's.
+      expect((await post(db, '/api/auth/login', gabriel)).status).toBe(200);
+
+      const oneTooMany = await post(db, '/api/auth/login', {
+        email: 'another@example.com',
+        password: 'wrong',
+      });
+      expect(oneTooMany.status).toBe(429);
+
+      // Same server, another address behind the trusted proxy: its own count.
+      const elsewhere = await post(
+        db,
+        '/api/auth/login',
+        { email: 'another@example.com', password: 'wrong' },
+        { 'x-forwarded-for': '203.0.113.9' },
+      );
+      expect(elsewhere.status).toBe(401);
+    },
+  );
 });
