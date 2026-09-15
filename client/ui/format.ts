@@ -15,6 +15,14 @@ export function formatTime(date: Date): string {
   return `${hour}:${minutes}`;
 }
 
+export function formatTimeWithMeridiem(date: Date): string {
+  return `${formatTime(date)} ${date.getHours() < 12 ? 'AM' : 'PM'}`;
+}
+
+export function accessibleBlockName(title: string, start: Date, end: Date): string {
+  return `${title}, ${formatTimeWithMeridiem(start)} - ${formatTimeWithMeridiem(end)}`;
+}
+
 /** Hour gutter labels read "5 AM", "12 PM". */
 export function formatHourLabel(hour: number): string {
   const display = hour % 12 || 12;

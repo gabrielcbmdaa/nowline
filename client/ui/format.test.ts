@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { minuteToTimeValue, timeValueToMinute } from './format';
+import {
+  accessibleBlockName,
+  formatTimeWithMeridiem,
+  minuteToTimeValue,
+  timeValueToMinute,
+} from './format';
 
 describe('minuteToTimeValue', () => {
   it('pads both halves so <input type="time"> accepts the value', () => {
@@ -31,5 +36,30 @@ describe('timeValueToMinute', () => {
     for (const value of ['', '9', '09:', ':15', 'ab:cd', '24:00', '12:60', '09:15:30']) {
       expect(timeValueToMinute(value)).toBeNaN();
     }
+  });
+});
+
+describe('formatTimeWithMeridiem', () => {
+  it('uses AM before noon, including midnight', () => {
+    expect(formatTimeWithMeridiem(new Date(2026, 8, 14, 0, 15))).toBe('12:15 AM');
+    expect(formatTimeWithMeridiem(new Date(2026, 8, 14, 11, 30))).toBe('11:30 AM');
+  });
+
+  it('uses PM from noon onward', () => {
+    expect(formatTimeWithMeridiem(new Date(2026, 8, 14, 12, 0))).toBe('12:00 PM');
+    expect(formatTimeWithMeridiem(new Date(2026, 8, 14, 12, 15))).toBe('12:15 PM');
+    expect(formatTimeWithMeridiem(new Date(2026, 8, 5, 23, 50))).toBe('11:50 PM');
+  });
+});
+
+describe('accessibleBlockName', () => {
+  it('joins the title and both meridiems, matching the crossing fixture', () => {
+    expect(
+      accessibleBlockName(
+        'Late session',
+        new Date(2026, 8, 5, 23, 50),
+        new Date(2026, 8, 6, 0, 20),
+      ),
+    ).toBe('Late session, 11:50 PM - 12:20 AM');
   });
 });

@@ -2,7 +2,7 @@ import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { atMinute, minutesSinceMidnight, wallClockMinutesBetween } from '../../domain/dates';
 import { minuteToPixel } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
-import { formatTime } from '../format';
+import { accessibleBlockName, formatTime } from '../format';
 import { PlayIcon, StopIcon } from '../icons';
 import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor';
 import { useBlockDrag } from './useBlockDrag';
@@ -77,6 +77,9 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
     clickFromGesture.current = true;
   }
 
+  const labelStart = atMinute(occurrence.date, startMinute);
+  const labelEnd = atMinute(occurrence.date, startMinute + durationMinutes);
+
   return (
     <article
       className={['block', `block--${occurrence.status}`, height >= STACKED_MIN_HEIGHT ? 'block--stacked' : '']
@@ -90,6 +93,7 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
       }}
       role="button"
       tabIndex={0}
+      aria-label={accessibleBlockName(occurrence.title, labelStart, labelEnd)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
@@ -118,7 +122,7 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
       <div className="block__text">
         <span className="block__title">{occurrence.title}</span>
         <span className="block__time">
-          {formatTime(atMinute(occurrence.date, startMinute))} - {formatTime(atMinute(occurrence.date, startMinute + durationMinutes))}
+          {formatTime(labelStart)} - {formatTime(labelEnd)}
         </span>
       </div>
 
