@@ -24,7 +24,7 @@ describe('SignInScreen', () => {
   });
 
   it('keeps the token where the engine looks for it', async () => {
-    vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token' });
+    vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     const onSignedIn = vi.fn();
     render(<SignInScreen onSignedIn={onSignedIn} />);
 
@@ -40,7 +40,7 @@ describe('SignInScreen', () => {
   });
 
   it('does not touch the joined flag when it stores a token', async () => {
-    vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token' });
+    vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     await repository.writeSyncState({ token: null, userId: null, cursor: 'T1', joined: true });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
@@ -108,7 +108,7 @@ describe('SignInScreen', () => {
   });
 
   it('does not send a second request while the first is in the air', async () => {
-    let release: (value: { token: string }) => void = () => {};
+    let release: (value: { token: string; userId: string }) => void = () => {};
     const login = vi.spyOn(apiClient, 'login').mockReturnValue(new Promise((resolve) => { release = resolve; }));
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
@@ -127,11 +127,11 @@ describe('SignInScreen', () => {
     // a form submit from anywhere) is stopped by the handler itself.
     fireEvent.submit(screen.getByRole('form'));
     expect(login).toHaveBeenCalledTimes(1);
-    release({ token: 'a-real-token' });
+    release({ token: 'a-real-token', userId: 'u1' });
   });
 
   it('does not mark a device as joined just because it signed in', async () => {
-    vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token' });
+    vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
     typeInto('Username', 'gabriel');
