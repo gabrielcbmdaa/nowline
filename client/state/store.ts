@@ -205,7 +205,7 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * A wake-up that arrives while a round is running joins it instead of asking
  * for another. Not a lock — the engine has its own, one layer down, covering
- * all three ways in. This is about not queueing five rounds because five
+ * every way in. This is about not queueing five rounds because five
  * things woke up during one slow one.
  */
 let roundInFlight: Promise<void> | null = null;

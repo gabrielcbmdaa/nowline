@@ -551,9 +551,12 @@ export class LocalStorageRepository implements BlockRepository {
   }
 
   /**
-   * Throw away what is here and keep what arrived. Only the first-sync screen
-   * calls this, and only after `keepDiscardedCopy`; the queue is emptied too,
-   * because nothing local is owed any more.
+   * Throw away what is here and keep what arrived. Two callers: taking the
+   * cloud, always after `keepDiscardedCopy`; and a change of owner in
+   * `sync.ts`, with nothing arriving, after a copy whenever something here has
+   * not reached a cloud. The queue is emptied too, because nothing local is
+   * owed any more. Keys are written, never removed: the legacy migration
+   * refills a missing one.
    */
   async replaceAllFromServer(changes: SyncChanges): Promise<void> {
     this.ensureMigrated();

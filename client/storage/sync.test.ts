@@ -10,7 +10,7 @@ vi.mock('../reportError', () => ({
 
 import { reportError } from '../reportError';
 import { LocalStorageRepository } from './localStorageRepository';
-import { firstSyncDecision, inspectFirstSync, settleFirstSync, syncOnce } from './sync';
+import { adoptSession, firstSyncDecision, inspectFirstSync, settleFirstSync, syncOnce } from './sync';
 
 const plan: BlockPlan = {
   id: 'p1',
@@ -771,5 +771,196 @@ describe('the account the device holds', () => {
     expect((await repo.listPending()).plans).toEqual(['mine']);
     expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T0', joined: true });
     expect(reported).toHaveBeenCalledOnce();
+  });
+});
+
+describe('adoptSession', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const session = { token: 'new-token', userId: 'u2' };
+  const today = () => '2026-09-14';
+  const fresh = { token: 'new-token', userId: 'u2', cursor: null, joined: false };
+
+  it('changes only the token when the session is for the account the device holds', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u2', cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'mine' });
+
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'adopted' });
+
+    // The same person signing in after a dead token: nothing is asked again,
+    // nothing is downloaded again, and the unsent change is still owed.
+    expect(await repo.readSyncState()).toEqual({ token: 'new-token', userId: 'u2', cursor: 'T1', joined: true });
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+    expect((await repo.listPending()).plans).toEqual(['mine']);
+  });
+
+  it('empties the device, without a copy, when another account left nothing unsent', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'theirs' });
+    await repo.clearPending({ projects: [], plans: ['theirs'], overrides: [] });
+
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'adopted' });
+
+    expect(await repo.readSyncState()).toEqual(fresh);
+    expect(await repo.listPlans()).toEqual([]);
+    // Everything was in u1's cloud already; a copy would only spend storage quota.
+    expect(localStorage.getItem('nowline.discarded.2026-09-14')).toBeNull();
+  });
+
+  it("asks before removing another account's unsent changes, and writes nothing", async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'theirs' });
+
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'other-account', atRisk: 1 });
+
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['theirs']);
+  });
+
+  it("keeps a copy of another account's unsent changes when told to remove them", async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'theirs' });
+
+    expect(await adoptSession(session, 'discard', { repo, today })).toEqual({ kind: 'adopted' });
+
+    expect(await repo.readSyncState()).toEqual(fresh);
+    expect(await repo.listPlans()).toEqual([]);
+    expect(await repo.listPending()).toEqual({ projects: [], plans: [], overrides: [] });
+    const kept = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-14') ?? 'null');
+    expect(kept.plans.map((row: { id: string }) => row.id)).toEqual(['theirs']);
+  });
+
+  it("does not keep another account's rows even when told to", async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'theirs' });
+
+    // "They are mine" is an answer about rows no account claims. These are
+    // known to be u1's; keeping them under u2 is the merge this function prevents.
+    expect(await adoptSession(session, 'keep', { repo, today })).toEqual({ kind: 'other-account', atRisk: 1 });
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['theirs']);
+  });
+
+  it('counts every row of a device that never joined, not only its queue', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'theirs' });
+    await repo.clearPending({ projects: [], plans: ['theirs'], overrides: [] });
+
+    // A device that never joined has sent nothing to any cloud, queued or not.
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'other-account', atRisk: 1 });
+    // Asking is not emptying: the rows are still here for whoever answers.
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['theirs']);
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: 'u1', cursor: null, joined: false });
+  });
+
+  it('adopts a device from before accounts that holds nothing, and forgets its cursor', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: null, cursor: 'T1', joined: true });
+
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'adopted' });
+
+    // A cursor with no known owner may come from another account's stream, and
+    // would skip every row in u2's cloud stamped before it.
+    expect(await repo.readSyncState()).toEqual(fresh);
+  });
+
+  it('asks whoever holds a device from before accounts whether its rows are theirs', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: null, cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'old' });
+    await repo.clearPending({ projects: [], plans: ['old'], overrides: [] });
+
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'unknown-owner', rows: 1 });
+
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: null, cursor: 'T1', joined: true });
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['old']);
+  });
+
+  it('leaves the rows to the first-sync question when the person says they are theirs', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: null, cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'old' });
+
+    expect(await adoptSession(session, 'keep', { repo, today })).toEqual({ kind: 'adopted' });
+
+    // Not merged here: joined is false, so the next thing to run is the
+    // first-sync question, which asks again if u2's cloud holds rows too.
+    expect(await repo.readSyncState()).toEqual(fresh);
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['old']);
+    expect(localStorage.getItem('nowline.discarded.2026-09-14')).toBeNull();
+  });
+
+  it('removes the rows of a device from before accounts, with a copy, when told to', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: null, cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'old' });
+
+    expect(await adoptSession(session, 'discard', { repo, today })).toEqual({ kind: 'adopted' });
+
+    expect(await repo.readSyncState()).toEqual(fresh);
+    expect(await repo.listPlans()).toEqual([]);
+    const kept = JSON.parse(localStorage.getItem('nowline.discarded.2026-09-14') ?? 'null');
+    expect(kept.plans.map((row: { id: string }) => row.id)).toEqual(['old']);
+  });
+
+  it('empties the keys instead of removing them, so the legacy rows do not come back', async () => {
+    localStorage.setItem('tt.plans.v1', JSON.stringify([{ ...plan, id: 'legacy' }]));
+    const repo = new LocalStorageRepository();
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['legacy']);
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+
+    expect(await adoptSession(session, null, { repo, today })).toEqual({ kind: 'adopted' });
+
+    // The migration copies tt.*.v1 into any v2 key that is missing, once per
+    // instance. A removed key would hand u1's pre-rename rows to u2 at next start.
+    expect(await new LocalStorageRepository().listPlans()).toEqual([]);
+  });
+
+  it('pays the full-download marker its own emptying raised', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    localStorage.setItem('nowline.plans.v2', 'not json at all');
+
+    await adoptSession(session, null, { repo, today });
+
+    // Emptying overwrites the damaged key, and `write` raises the marker. The
+    // new account starts at cursor null, which is a full download already.
+    expect(await repo.readResyncOwed()).toBeNull();
+    expect(localStorage.getItem('nowline.plans.v2.corrupt')).toBe('not json at all');
+  });
+
+  it('waits for a round already going before it counts what is at risk', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T0', joined: true });
+    await repo.savePlan({ ...plan, id: 'theirs' });
+
+    const order: string[] = [];
+    let releaseRound: (value: unknown) => void = () => {};
+    const send = vi.fn().mockImplementationOnce(async () => {
+      order.push('round');
+      await new Promise((resolve) => {
+        releaseRound = resolve;
+      });
+      return emptyReply('T1');
+    });
+
+    const round = syncOnce({ send, repo });
+    const adopt = adoptSession(session, null, { repo, today });
+    await vi.waitFor(() => expect(order).toEqual(['round']));
+
+    releaseRound(undefined);
+    await round;
+    // The round delivered u1's change before the count. Counted outside the
+    // engine's door, it would be 1, and the question would be about a change
+    // already in u1's cloud.
+    expect(await adopt).toEqual({ kind: 'adopted' });
   });
 });

@@ -1,5 +1,5 @@
 import * as apiClient from './apiClient';
-import { isFailure } from './apiClient';
+import { isFailure, type Session } from './apiClient';
 import type { SentRows } from './localStorageRepository';
 import { repository as liveRepository } from './repository';
 import type { BlockRepository } from './repository';
@@ -8,12 +8,13 @@ import { reportError, reportWarning } from '../reportError';
 /**
  * Nothing in this module runs while something else in it is running.
  *
- * There are three ways in — a round, a look, and a settle — and they all read
- * and write the same two things: this device's queue and its cursor. Two of
- * them overlapping is how a cursor written by one gets replaced by an older
- * one from the other, and how a first sync that failed still leaves both sides
- * mixed. One lock on one of the three doors, which is what this had, only
- * closes that door.
+ * There are four ways in — a round, a look, a settle, and adopting a session —
+ * and they all read and write the same things: this device's queue, its cursor,
+ * and whose rows it holds. Two of them overlapping is how a cursor written by
+ * one gets replaced by an older one from the other, how a first sync that
+ * failed still leaves both sides mixed, and how a change of owner counts a
+ * queue a round is busy emptying. One lock on one of the doors, which is what
+ * this had, only closes that door.
  *
  * Each public function wraps its own body. The bodies call each other directly
  * — a settle runs a round inside itself, and if the inner call waited for the
@@ -54,6 +55,20 @@ export type FirstSyncLook =
   | { kind: 'offline' }
   | { kind: 'unauthorized' }
   | { kind: 'refused'; status: number | null };
+
+/** What the person holding the device answered, when they were asked. */
+export type AdoptAnswer = 'discard' | 'keep';
+
+/**
+ * `other-account`: the rows belong to an account that is not this session's,
+ * and `atRisk` of them have not reached that account's cloud. `unknown-owner`:
+ * a device from before accounts, whose `rows` no account has claimed.
+ */
+export type AdoptQuestion =
+  | { kind: 'other-account'; atRisk: number }
+  | { kind: 'unknown-owner'; rows: number };
+
+export type AdoptOutcome = { kind: 'adopted' } | AdoptQuestion;
 
 /**
  * What a device that has never synced should do, by what it finds on each
@@ -288,4 +303,86 @@ async function runSettleFirstSync(
     await repo.writeSyncState({ ...after, joined: true });
   }
   return outcome;
+}
+
+/**
+ * The one way a token from outside the engine reaches this device.
+ *
+ * A device holds one account's rows. A session for that same account changes
+ * the token and nothing else. A session for another account means the rows are
+ * somebody else's, and they leave, after a copy when any of them has not
+ * reached that somebody's cloud. A device from before accounts has no owner on
+ * record, and only the person holding it can say whether its rows are theirs.
+ *
+ * Through the door like everything else here: it reads the queue a round is
+ * busy emptying, and it writes the state a round is about to write.
+ */
+export function adoptSession(
+  session: Session,
+  answer: AdoptAnswer | null,
+  deps: { repo?: BlockRepository; today?: () => string } = {},
+): Promise<AdoptOutcome> {
+  return oneAtATime(() => runAdoptSession(session, answer, deps));
+}
+
+async function runAdoptSession(
+  session: Session,
+  answer: AdoptAnswer | null,
+  deps: { repo?: BlockRepository; today?: () => string },
+): Promise<AdoptOutcome> {
+  const repo = deps.repo ?? liveRepository;
+  const today = deps.today ?? (() => new Date().toISOString().slice(0, 10));
+  const state = await repo.readSyncState();
+
+  if (state.userId === session.userId) {
+    await repo.writeSyncState({ ...state, token: session.token });
+    return { kind: 'adopted' };
+  }
+
+  // Not the same account, or not known to be: the cursor goes as well. One
+  // taken from another account's stream would skip every row stamped before it.
+  const fresh = { token: session.token, userId: session.userId, cursor: null, joined: false };
+
+  if (state.userId === null) {
+    const rows = await repo.countLocalRows();
+    if (rows > 0 && answer === null) return { kind: 'unknown-owner', rows };
+    if (rows > 0 && answer === 'discard') await resetDevice(repo, today(), true);
+    // 'keep' leaves the rows to the first-sync question, which asks again when
+    // the cloud holds rows too. It is never a merge made here.
+    await repo.writeSyncState(fresh);
+    return { kind: 'adopted' };
+  }
+
+  const atRisk = await countAtRisk(repo, state.joined);
+  // 'keep' is no answer for rows known to be another account's.
+  if (atRisk > 0 && answer !== 'discard') return { kind: 'other-account', atRisk };
+  await resetDevice(repo, today(), atRisk > 0);
+  await repo.writeSyncState(fresh);
+  return { kind: 'adopted' };
+}
+
+/**
+ * What would be lost for good if this device's rows left now. A joined device
+ * has delivered everything but its queue; one that never joined has delivered
+ * nothing at all, queued or not.
+ */
+async function countAtRisk(repo: BlockRepository, joined: boolean): Promise<number> {
+  if (!joined) return repo.countLocalRows();
+  const pending = await repo.listPending();
+  return pending.projects.length + pending.plans.length + pending.overrides.length;
+}
+
+/**
+ * Rows, queue and full-download marker, emptied in one step; the sync state is
+ * the caller's to write. The copy comes first, as in take-the-cloud.
+ */
+async function resetDevice(repo: BlockRepository, stamp: string, keepCopy: boolean): Promise<void> {
+  if (keepCopy) await repo.keepDiscardedCopy(stamp);
+  // `[]`, never a removed key: `ensureMigrated` refills a missing v2 key from
+  // tt.*.v1, and those rows belong to whoever used this device before.
+  await repo.replaceAllFromServer({ projects: [], plans: [], overrides: [] });
+  // Overwriting a damaged key just raised the marker. The next owner starts at
+  // cursor null, which is the full download it asks for.
+  const owed = await repo.readResyncOwed();
+  if (owed !== null) await repo.clearResyncOwed(owed);
 }
