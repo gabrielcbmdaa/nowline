@@ -40,7 +40,7 @@ calling `/api/sync` against a server that does not know what that is yet.
 
 On the server, the Node process runs from compiled `dist-server/` on `127.0.0.1:3001`,
 behind nginx's `location /api/`; its configuration lives in a `.env` on the machine,
-not in this repository. Create the account with `scripts/create-user.ts`. Host, user
+not in this repository. Host, user
 and path live in repository secrets.
 
 ## How it works
