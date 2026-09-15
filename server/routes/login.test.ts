@@ -41,6 +41,24 @@ describe('login', () => {
     expect(await identify(db, `Bearer ${token}`)).not.toBeNull();
   });
 
+  it('names the account the token belongs to', async () => {
+    const db = await withTestDb();
+    const { insertedId } = await collections(db).users.insertOne({
+      username: 'gabriel',
+      passwordHash: await hashPassword('correct horse'),
+    });
+
+    const response = await post(db, '/api/auth/login', {
+      username: 'gabriel',
+      password: 'correct horse',
+    });
+
+    const { token, userId } = response.body as { token: string; userId?: unknown };
+    expect(userId).toBe(String(insertedId));
+    // The device stores the two as one pair, so they must name the same account.
+    expect(await identify(db, `Bearer ${token}`)).toBe(userId);
+  });
+
   it('answers the same way to a wrong password and to a user that does not exist', async () => {
     const db = await withTestDb();
     await collections(db).users.insertOne({

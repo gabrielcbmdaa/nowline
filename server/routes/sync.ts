@@ -118,7 +118,9 @@ export function syncRoute(db: Db): Router {
       }
     }
 
-    response.json({ serverTime: cursor, changes, rejected });
+    // Named so a device can check the reply is for the account it holds. From
+    // the token, like every row above; the body is never asked who it is.
+    response.json({ serverTime: cursor, changes, rejected, userId });
   });
 
   return router;
