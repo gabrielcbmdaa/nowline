@@ -5,7 +5,7 @@ import { createApp } from '../index.js';
 import { identify } from '../identity.js';
 import { hashPassword } from '../passwords.js';
 import { call } from '../testing/http.js';
-import { MAX_ATTEMPTS, WINDOW_MINUTES } from './login.js';
+import { LIMITS } from '../attempts.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
 const post = (db: Db, path: string, body: unknown, token?: string) =>
@@ -100,7 +100,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < LIMITS.login.max; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
 
@@ -118,7 +118,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < LIMITS.login.max; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
 
@@ -136,7 +136,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    const justUnderLimit = MAX_ATTEMPTS - 1;
+    const justUnderLimit = LIMITS.login.max - 1;
     for (let attempt = 0; attempt < justUnderLimit; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
@@ -145,7 +145,7 @@ describe('login', () => {
     for (let attempt = 0; attempt < justUnderLimit; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
-    // Two runs of (MAX_ATTEMPTS - 1) failures would exceed MAX_ATTEMPTS without the clear.
+    // Two runs of (LIMITS.login.max - 1) failures would exceed LIMITS.login.max without the clear.
     const stillOpen = await post(db, '/api/auth/login', {
       username: 'gabriel',
       password: 'correct horse',
@@ -155,7 +155,9 @@ describe('login', () => {
 
   it('reopens after the failure window expires', async () => {
     vi.useFakeTimers();
-    const startedAt = new Date(2026, 8, 8, 10, 0, 0);
+    // In the future on purpose: mongod applies the TTL index against its own clock,
+    // and a window stamped in the past can vanish mid-test and reopen the door.
+    const startedAt = new Date(2099, 8, 8, 10, 0, 0);
     vi.setSystemTime(startedAt);
 
     const db = await withTestDb();
@@ -164,7 +166,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < LIMITS.login.max; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
     const blocked = await post(db, '/api/auth/login', {
@@ -173,7 +175,7 @@ describe('login', () => {
     });
     expect(blocked.status).toBe(429);
 
-    vi.setSystemTime(new Date(startedAt.getTime() + (WINDOW_MINUTES + 1) * 60_000));
+    vi.setSystemTime(new Date(startedAt.getTime() + (LIMITS.login.windowMinutes + 1) * 60_000));
     const reopened = await post(db, '/api/auth/login', {
       username: 'gabriel',
       password: 'correct horse',
@@ -183,7 +185,9 @@ describe('login', () => {
 
   it('stays shut until the failure window expires', async () => {
     vi.useFakeTimers();
-    const startedAt = new Date(2026, 8, 8, 10, 0, 0);
+    // In the future on purpose: mongod applies the TTL index against its own clock,
+    // and a window stamped in the past can vanish mid-test and reopen the door.
+    const startedAt = new Date(2099, 8, 8, 10, 0, 0);
     vi.setSystemTime(startedAt);
 
     const db = await withTestDb();
@@ -192,11 +196,11 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < LIMITS.login.max; attempt += 1) {
       await post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' });
     }
 
-    vi.setSystemTime(new Date(startedAt.getTime() + (WINDOW_MINUTES - 1) * 60_000));
+    vi.setSystemTime(new Date(startedAt.getTime() + (LIMITS.login.windowMinutes - 1) * 60_000));
     const stillShut = await post(db, '/api/auth/login', {
       username: 'gabriel',
       password: 'correct horse',
@@ -211,7 +215,7 @@ describe('login', () => {
       passwordHash: await hashPassword('correct horse'),
     });
 
-    const guesses = Array.from({ length: MAX_ATTEMPTS + 7 }, () =>
+    const guesses = Array.from({ length: LIMITS.login.max + 7 }, () =>
       post(db, '/api/auth/login', { username: 'gabriel', password: 'wrong' }),
     );
     const statuses = (await Promise.all(guesses)).map((r) => r.status);

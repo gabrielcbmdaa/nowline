@@ -2,7 +2,7 @@ import { MongoClient, type Db } from 'mongodb';
 
 export type SessionRow = { tokenHash: string; userId: string; createdAt: Date };
 export type UserRow = { _id?: unknown; username: string; passwordHash: string };
-export type AttemptRow = { key: string; attempts: number; firstFailureAt: Date };
+export type AttemptRow = { key: string; count: number; windowStartedAt: Date };
 
 export function collections(db: Db) {
   return {
@@ -11,7 +11,7 @@ export function collections(db: Db) {
     projects: db.collection('projects'),
     plans: db.collection('plans'),
     overrides: db.collection('overrides'),
-    loginAttempts: db.collection<AttemptRow>('loginAttempts'),
+    attempts: db.collection<AttemptRow>('attempts'),
   };
 }
 
@@ -31,7 +31,10 @@ export async function connect(db: Db): Promise<Db> {
   }
   await c.users.createIndex({ username: 1 }, { unique: true });
   await c.sessions.createIndex({ tokenHash: 1 }, { unique: true });
-  await c.loginAttempts.createIndex({ key: 1 }, { unique: true });
+  await c.attempts.createIndex({ key: 1 }, { unique: true });
+  // The longest window in attempts.ts is an hour. Without this, every IP that
+  // ever made a call would leave a row behind for good.
+  await c.attempts.createIndex({ windowStartedAt: 1 }, { expireAfterSeconds: 3600 });
   return db;
 }
 

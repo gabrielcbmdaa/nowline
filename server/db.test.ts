@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { LIMITS } from './attempts.js';
 import { collections, connect } from './db.js';
 import { assertSafeTestTarget, clearTestDb, closeTestDb, withTestDb } from './testing/mongo.js';
 
@@ -88,5 +89,16 @@ describe('the database', () => {
     await collections(db).plans.insertOne({ userId: 'them', id: 'p1' });
 
     expect(await collections(db).plans.countDocuments({ id: 'p1' })).toBe(2);
+  });
+
+  it('lets attempts rows expire on their own once the longest window has passed', async () => {
+    const db = await withTestDb();
+    await connect(db);
+
+    const indexes = await db.collection('attempts').indexes();
+    const ttl = indexes.find((index) => index.key.windowStartedAt === 1);
+    const longestWindowMinutes = Math.max(...Object.values(LIMITS).map((entry) => entry.windowMinutes));
+    expect(ttl?.expireAfterSeconds).toBe(longestWindowMinutes * 60);
+    expect(indexes.some((index) => index.key.key === 1 && index.unique === true)).toBe(true);
   });
 });

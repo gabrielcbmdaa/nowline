@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Db } from 'mongodb';
 import { Router } from 'express';
+import { LIMITS, TOO_MANY, countAttempt, forgetAttempts } from '../attempts.js';
 import { collections } from '../db.js';
 import { issueToken } from '../identity.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
@@ -9,34 +10,10 @@ import { hashPassword, verifyPassword } from '../passwords.js';
 // telling them where to spend their guesses.
 const REFUSED = { error: 'invalid credentials' };
 
-// Renamed from MAX_FAILURES on purpose: the counter now goes up when an
-// attempt starts, not when one is known to have failed. A success wipes the
-// row, so the number only ever grows on guesses that did not get in.
-export const MAX_ATTEMPTS = 5;
-export const WINDOW_MINUTES = 15;
-
 // bcrypt runs even when the username does not exist, so the two refusals take
 // the same time as well as saying the same thing. Made once per process, out
 // of bytes nobody knows.
 const dummyHash = hashPassword(randomBytes(32).toString('hex'));
-
-/**
- * One operation, because a check followed by an increment is not a limit:
- * twelve guesses fired together all read "under the limit" before any of them
- * wrote, and all twelve got their bcrypt comparison. `$inc` is atomic; the
- * `if` that used to precede it was not.
- */
-async function countAttempt(db: Db, key: string): Promise<number> {
-  const cutoff = new Date(Date.now() - WINDOW_MINUTES * 60_000);
-  await collections(db).loginAttempts.deleteOne({ key, firstFailureAt: { $lt: cutoff } });
-
-  const row = await collections(db).loginAttempts.findOneAndUpdate(
-    { key },
-    { $inc: { attempts: 1 }, $setOnInsert: { firstFailureAt: new Date() } },
-    { upsert: true, returnDocument: 'after' },
-  );
-  return row?.attempts ?? 1;
-}
 
 export function loginRoute(db: Db): Router {
   const router = Router();
@@ -50,8 +27,8 @@ export function loginRoute(db: Db): Router {
       return;
     }
 
-    if ((await countAttempt(db, username)) > MAX_ATTEMPTS) {
-      response.status(429).json({ error: 'too many attempts' });
+    if (await countAttempt(db, `login:${username}`, LIMITS.login)) {
+      response.status(429).json(TOO_MANY);
       return;
     }
 
@@ -62,7 +39,7 @@ export function loginRoute(db: Db): Router {
       return;
     }
 
-    await collections(db).loginAttempts.deleteOne({ key: username });
+    await forgetAttempts(db, `login:${username}`);
     // The account travels with its token. A device records the two together,
     // and that pair is how it later tells its own rows from somebody else's.
     const userId = String(user._id);
