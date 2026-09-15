@@ -822,12 +822,12 @@ describe('LocalStorageRepository', () => {
 
   it('starts with no token and no cursor', async () => {
     const repo = new LocalStorageRepository();
-    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null, joined: false });
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: null, cursor: null, joined: false });
   });
 
   it('treats a device that has never synced as not joined', async () => {
     const repo = new LocalStorageRepository();
-    expect(await repo.readSyncState()).toEqual({ token: null, cursor: null, joined: false });
+    expect(await repo.readSyncState()).toEqual({ token: null, userId: null, cursor: null, joined: false });
   });
 
   it('does not read a damaged joined flag as joined', async () => {
@@ -839,9 +839,10 @@ describe('LocalStorageRepository', () => {
     expect((await new LocalStorageRepository().readSyncState()).joined).toBe(false);
   });
 
-  it('keeps the token and the cursor across instances', async () => {
+  it('keeps the token, its account and the cursor across instances', async () => {
     await new LocalStorageRepository().writeSyncState({
       token: 'abc',
+      userId: 'u1',
       cursor: '2026-09-09T20:00:00.000Z',
       joined: true,
     });
@@ -849,6 +850,7 @@ describe('LocalStorageRepository', () => {
     const later = new LocalStorageRepository();
     expect(await later.readSyncState()).toEqual({
       token: 'abc',
+      userId: 'u1',
       cursor: '2026-09-09T20:00:00.000Z',
       joined: true,
     });
@@ -861,6 +863,7 @@ describe('LocalStorageRepository', () => {
     // costs rows that are never asked for again.
     expect(await new LocalStorageRepository().readSyncState()).toEqual({
       token: null,
+      userId: null,
       cursor: null,
       joined: false,
     });
@@ -872,8 +875,38 @@ describe('LocalStorageRepository', () => {
     // Losing the token means the owner types a password again for nothing.
     expect(await new LocalStorageRepository().readSyncState()).toEqual({
       token: 'abc',
+      userId: null,
       cursor: null,
       joined: false,
+    });
+  });
+
+  it('reads a state written before accounts as belonging to no account yet', async () => {
+    // Every device in use on 2026-09-14 stored { token, cursor, joined }.
+    // Guessing an owner for it would be guessing whose rows these are.
+    localStorage.setItem('nowline.sync.v1', JSON.stringify({ token: 'abc', cursor: 'T1', joined: true }));
+
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({
+      token: 'abc',
+      userId: null,
+      cursor: 'T1',
+      joined: true,
+    });
+  });
+
+  it('keeps the token when only the account is damaged', async () => {
+    localStorage.setItem(
+      'nowline.sync.v1',
+      JSON.stringify({ token: 'abc', userId: 42, cursor: 'T1', joined: true }),
+    );
+
+    // A number is not an account. Read as "no account yet", the next sign-in
+    // asks; read as an account, it would compare against a stranger.
+    expect(await new LocalStorageRepository().readSyncState()).toEqual({
+      token: 'abc',
+      userId: null,
+      cursor: 'T1',
+      joined: true,
     });
   });
 

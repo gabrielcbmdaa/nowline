@@ -40,6 +40,16 @@ export async function revokeToken(db: Db, token: string): Promise<void> {
   await collections(db).sessions.deleteOne({ tokenHash: fingerprint(token) });
 }
 
+/**
+ * Forget the session this header carries, if it carries one. There is nothing
+ * to say back: a header that names no session and one whose session is now
+ * gone leave the same state behind.
+ */
+export async function revokeSession(db: Db, authorization: string | undefined): Promise<void> {
+  const token = readBearer(authorization);
+  if (token) await revokeToken(db, token);
+}
+
 function readBearer(authorization: string | undefined): string | null {
   if (!authorization) return null;
   const [scheme, value] = authorization.split(' ');

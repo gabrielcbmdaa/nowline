@@ -1,6 +1,8 @@
 import { useState, type JSX, type SubmitEvent } from 'react';
-import { isFailure, login, type ApiFailure } from '../storage/apiClient';
-import { repository } from '../storage/repository';
+import { reportError, reportWarning } from '../reportError';
+import { isFailure, login, logout, type ApiFailure, type Session } from '../storage/apiClient';
+import { adoptSession, type AdoptAnswer, type AdoptQuestion } from '../storage/sync';
+import { OtherAccountPrompt } from './OtherAccountPrompt';
 
 type Props = { onSignedIn: () => void };
 
@@ -22,6 +24,49 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [asking, setAsking] = useState<{ session: Session; question: AdoptQuestion } | null>(null);
+
+  /**
+   * The engine decides what a session means for the rows on this device; this
+   * screen only shows the question when there is one. Writing the token here,
+   * as this screen used to, is how one account's queue reached another's cloud.
+   */
+  async function hand(session: Session, answer: AdoptAnswer | null): Promise<void> {
+    try {
+      const outcome = await adoptSession(session, answer);
+      if (outcome.kind === 'adopted') {
+        setAsking(null);
+        onSignedIn();
+        return;
+      }
+      setAsking({ session, question: outcome });
+    } catch (adoptError) {
+      reportError('Preparing this device for the session failed', adoptError);
+      setAsking(null);
+      setError('This device could not be prepared. Please try again.');
+    }
+  }
+
+  async function answer(choice: AdoptAnswer) {
+    if (asking === null || submitting) return;
+    setSubmitting(true);
+    try {
+      await hand(asking.session, choice);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function cancel() {
+    if (asking === null) return;
+    const { token } = asking.session;
+    setAsking(null);
+    // Nobody adopted this session, so the server should not keep it alive. The
+    // form comes back either way; a failure is only worth a line in the log.
+    void logout(token).then((result) => {
+      if (isFailure(result)) reportWarning('Revoking a session nobody adopted failed', result);
+    });
+  }
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,14 +82,23 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
         return;
       }
 
-      // Read first, write the token only: the flag and the cursor belong to the
-      // engine and this screen has no business overwriting either.
-      const state = await repository.readSyncState();
-      await repository.writeSyncState({ ...state, token: result.token });
-      onSignedIn();
+      await hand(result, null);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (asking !== null) {
+    return (
+      <OtherAccountPrompt
+        question={asking.question}
+        busy={submitting}
+        onAnswer={(choice) => {
+          void answer(choice);
+        }}
+        onCancel={cancel}
+      />
+    );
   }
 
   return (

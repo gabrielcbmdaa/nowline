@@ -11,7 +11,17 @@ const PENDING_KEY = 'nowline.pending.v1';
 const SYNC_KEY = 'nowline.sync.v1';
 const RESYNC_KEY = 'nowline.resync.v1';
 
-export type SyncState = { token: string | null; cursor: string | null; joined: boolean };
+export type SyncState = {
+  token: string | null;
+  /**
+   * The account the token belongs to, always written together with it. `null`
+   * on a device from before accounts, or with nobody signed in: an owner this
+   * device does not know, never a guess at one.
+   */
+  userId: string | null;
+  cursor: string | null;
+  joined: boolean;
+};
 
 export type PendingIds = {
   projects: string[];
@@ -350,26 +360,28 @@ export class LocalStorageRepository implements BlockRepository {
     this.ensureMigrated();
     try {
       const raw = localStorage.getItem(SYNC_KEY);
-      if (raw === null) return { token: null, cursor: null, joined: false };
+      if (raw === null) return { token: null, userId: null, cursor: null, joined: false };
 
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null) {
         reportWarning(`Stored "${SYNC_KEY}" is not an object`, parsed);
-        return { token: null, cursor: null, joined: false };
+        return { token: null, userId: null, cursor: null, joined: false };
       }
 
-      const row = parsed as { token?: unknown; cursor?: unknown; joined?: unknown };
-      // Read the two halves apart. A damaged cursor costs one full download;
+      const row = parsed as { token?: unknown; userId?: unknown; cursor?: unknown; joined?: unknown };
+      // Read the halves apart. A damaged cursor costs one full download;
       // dropping a good token with it costs the owner a password prompt for
-      // nothing, and those are not the same price.
+      // nothing, and those are not the same price. A damaged account is read as
+      // no account, which asks at the next sign-in rather than guessing.
       return {
         token: typeof row.token === 'string' ? row.token : null,
+        userId: typeof row.userId === 'string' ? row.userId : null,
         cursor: typeof row.cursor === 'string' ? row.cursor : null,
         joined: row.joined === true,
       };
     } catch (error) {
       reportWarning(`Reading "${SYNC_KEY}" from storage failed`, error);
-      return { token: null, cursor: null, joined: false };
+      return { token: null, userId: null, cursor: null, joined: false };
     }
   }
 
@@ -539,9 +551,12 @@ export class LocalStorageRepository implements BlockRepository {
   }
 
   /**
-   * Throw away what is here and keep what arrived. Only the first-sync screen
-   * calls this, and only after `keepDiscardedCopy`; the queue is emptied too,
-   * because nothing local is owed any more.
+   * Throw away what is here and keep what arrived. Two callers: taking the
+   * cloud, always after `keepDiscardedCopy`; and a change of owner in
+   * `sync.ts`, with nothing arriving, after a copy whenever something here has
+   * not reached a cloud. The queue is emptied too, because nothing local is
+   * owed any more. Keys are written, never removed: the legacy migration
+   * refills a missing one.
    */
   async replaceAllFromServer(changes: SyncChanges): Promise<void> {
     this.ensureMigrated();

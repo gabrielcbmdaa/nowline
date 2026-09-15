@@ -63,6 +63,22 @@ describe('sync', () => {
     expect(stored[0].userId).toBe('the-real-one');
   });
 
+  it('names the account the reply belongs to, taken from the token', async () => {
+    const db = await withTestDb();
+    const token = await issueToken(db, 'the-real-one');
+
+    const response = await post(
+      db,
+      '/api/sync',
+      { since: null, changes: empty(), userId: 'someone-else' },
+      token,
+    );
+
+    // The client compares this with the account it recorded beside the token.
+    // Same rule as the rows: the token says who, the body never does.
+    expect((response.body as { userId?: unknown }).userId).toBe('the-real-one');
+  });
+
   it('never hands one owner the rows of another', async () => {
     const db = await withTestDb();
     const mine = await issueToken(db, 'me');

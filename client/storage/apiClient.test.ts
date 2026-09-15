@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isFailure, login, sync } from './apiClient';
+import { isFailure, login, logout, sync } from './apiClient';
 
 const reply = (status: number, body: unknown) =>
   vi.fn().mockResolvedValue({
@@ -14,9 +14,20 @@ describe('apiClient', () => {
     vi.unstubAllGlobals();
   });
 
-  it('hands back the token the server issued', async () => {
+  it('hands back the token the server issued, with the account it belongs to', async () => {
+    vi.stubGlobal('fetch', reply(200, { token: 'abc', userId: 'u1' }));
+    expect(await login('gabriel', 'a-long-password')).toEqual({ token: 'abc', userId: 'u1' });
+  });
+
+  it('refuses a token that comes without its account', async () => {
+    // The device stores the token and its account as one pair. Half a pair is
+    // a token it could not tell apart from somebody else's.
     vi.stubGlobal('fetch', reply(200, { token: 'abc' }));
-    expect(await login('gabriel', 'a-long-password')).toEqual({ token: 'abc' });
+    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200 });
+
+    // Half a pair, too: an account that is not a string names no account.
+    vi.stubGlobal('fetch', reply(200, { token: 'abc', userId: 42 }));
+    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200 });
   });
 
   it('calls the path the app is served from, never another origin', async () => {
@@ -157,5 +168,62 @@ describe('apiClient', () => {
       since: 'T0',
       changes: { projects: [], plans: [{ id: 'p1', updatedAt: 'U' }], overrides: [] },
     });
+  });
+
+  it('asks the server to forget a token, and takes no content for an answer', async () => {
+    // A real fetch rejects `json()` on an empty 204 body. Without that, this
+    // test could not tell a client that handles 204 from one that parses it.
+    const fetcher = vi.fn().mockResolvedValue({
+      status: 204,
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await logout('the-token')).toBe(true);
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/logout');
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer the-token');
+  });
+
+  it('reads the account a sync reply names', async () => {
+    vi.stubGlobal(
+      'fetch',
+      reply(200, { serverTime: 'T', changes: { projects: [], plans: [], overrides: [] }, rejected: [], userId: 'u1' }),
+    );
+
+    const result = await sync('t', null, { projects: [], plans: [], overrides: [] });
+
+    expect(isFailure(result)).toBe(false);
+    expect((result as { userId?: unknown }).userId).toBe('u1');
+  });
+
+  it('reads a sync reply that names no account, as a server from before accounts sends it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      reply(200, { serverTime: 'T', changes: { projects: [], plans: [], overrides: [] }, rejected: [] }),
+    );
+
+    const result = await sync('t', null, { projects: [], plans: [], overrides: [] });
+
+    // Optional on purpose: a client that required it would refuse every round
+    // from a server one deploy behind, and the device would stop syncing.
+    expect(isFailure(result)).toBe(false);
+  });
+
+  it('refuses a sync reply whose account is not a string', async () => {
+    vi.stubGlobal(
+      'fetch',
+      reply(200, { serverTime: 'T', changes: { projects: [], plans: [], overrides: [] }, rejected: [], userId: 42 }),
+    );
+
+    const result = await sync('t', null, { projects: [], plans: [], overrides: [] });
+
+    // The engine compares this field with the account it holds. A number that
+    // slipped through would compare unequal to every account there is.
+    expect(result).toEqual({ failed: true, kind: 'refused', status: 200 });
   });
 });

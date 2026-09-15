@@ -63,7 +63,10 @@ export function loginRoute(db: Db): Router {
     }
 
     await collections(db).loginAttempts.deleteOne({ key: username });
-    response.json({ token: await issueToken(db, String(user._id)) });
+    // The account travels with its token. A device records the two together,
+    // and that pair is how it later tells its own rows from somebody else's.
+    const userId = String(user._id);
+    response.json({ token: await issueToken(db, userId), userId });
   });
 
   return router;

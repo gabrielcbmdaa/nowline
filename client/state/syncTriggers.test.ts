@@ -247,7 +247,7 @@ describe('the four moments a round happens', () => {
   });
 
   it('sends the owner to sign in when a round is rejected mid-life', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: 'T1', joined: true });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: 'T1', joined: true });
     look.mockResolvedValue({ kind: 'already-joined' });
     await decideEntry();
     round.mockResolvedValue({ kind: 'unauthorized' });
@@ -258,7 +258,7 @@ describe('the four moments a round happens', () => {
   });
 
   it('does not send the owner to sign in while the engine is still deciding', async () => {
-    await repository.writeSyncState({ token: 'abc', cursor: null, joined: false });
+    await repository.writeSyncState({ token: 'abc', userId: null, cursor: null, joined: false });
     look.mockReturnValue(new Promise(() => {}));
     void decideEntry();
     await vi.waitFor(() => expect(getState().entry).toBe('deciding'));

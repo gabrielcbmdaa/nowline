@@ -6,7 +6,11 @@
 
 export type SyncRow = { id: string; updatedAt: string; [field: string]: unknown };
 export type SyncChanges = { projects: SyncRow[]; plans: SyncRow[]; overrides: SyncRow[] };
-export type SyncReply = { serverTime: string; changes: SyncChanges; rejected: string[] };
+/** `userId` is optional so an older server's reply still reads; when present it must be a string. */
+export type SyncReply = { serverTime: string; changes: SyncChanges; rejected: string[]; userId?: string };
+
+/** A token and the account it belongs to, which a device only ever stores together. */
+export type Session = { token: string; userId: string };
 
 /**
  * `offline` means nobody answered and the same request is worth repeating.
@@ -29,8 +33,9 @@ const GIVE_UP_AFTER_MS = 15_000;
 
 function isSyncReply(value: unknown): value is SyncReply {
   if (typeof value !== 'object' || value === null) return false;
-  const row = value as { serverTime?: unknown; changes?: unknown; rejected?: unknown };
+  const row = value as { serverTime?: unknown; changes?: unknown; rejected?: unknown; userId?: unknown };
   if (typeof row.serverTime !== 'string' || !Array.isArray(row.rejected)) return false;
+  if (row.userId !== undefined && typeof row.userId !== 'string') return false;
   const changes = row.changes as { projects?: unknown; plans?: unknown; overrides?: unknown } | null;
   if (typeof changes !== 'object' || changes === null) return false;
   return (
@@ -58,6 +63,10 @@ async function post(path: string, body: unknown, token?: string): Promise<unknow
   if (response.status === 401) return { failed: true, kind: 'unauthorized', status: 401 };
   if (!response.ok) return { failed: true, kind: 'refused', status: response.status };
 
+  // No content is an answer too: logout has nothing to say except that it
+  // happened, and parsing an empty body would call that a refusal.
+  if (response.status === 204) return null;
+
   try {
     return await response.json();
   } catch {
@@ -66,15 +75,22 @@ async function post(path: string, body: unknown, token?: string): Promise<unknow
   }
 }
 
-export async function login(
-  username: string,
-  password: string,
-): Promise<{ token: string } | ApiFailure> {
+export async function login(username: string, password: string): Promise<Session | ApiFailure> {
   const result = await post('/api/auth/login', { username, password });
   if (isFailure(result)) return result;
 
-  const token = (result as { token?: unknown }).token;
-  return typeof token === 'string' ? { token } : { failed: true, kind: 'refused', status: 200 };
+  const { token, userId } = result as { token?: unknown; userId?: unknown };
+  // Both halves or neither: a token without its account is one the device
+  // cannot tell apart from somebody else's.
+  return typeof token === 'string' && typeof userId === 'string'
+    ? { token, userId }
+    : { failed: true, kind: 'refused', status: 200 };
+}
+
+/** Ask the server to forget a session. It answers the same whether it knew the token or not. */
+export async function logout(token: string): Promise<true | ApiFailure> {
+  const result = await post('/api/auth/logout', {}, token);
+  return isFailure(result) ? result : true;
 }
 
 export async function sync(

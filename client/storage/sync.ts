@@ -1,19 +1,20 @@
 import * as apiClient from './apiClient';
-import { isFailure } from './apiClient';
+import { isFailure, type Session } from './apiClient';
 import type { SentRows } from './localStorageRepository';
 import { repository as liveRepository } from './repository';
 import type { BlockRepository } from './repository';
-import { reportWarning } from '../reportError';
+import { reportError, reportWarning } from '../reportError';
 
 /**
  * Nothing in this module runs while something else in it is running.
  *
- * There are three ways in — a round, a look, and a settle — and they all read
- * and write the same two things: this device's queue and its cursor. Two of
- * them overlapping is how a cursor written by one gets replaced by an older
- * one from the other, and how a first sync that failed still leaves both sides
- * mixed. One lock on one of the three doors, which is what this had, only
- * closes that door.
+ * There are four ways in — a round, a look, a settle, and adopting a session —
+ * and they all read and write the same things: this device's queue, its cursor,
+ * and whose rows it holds. Two of them overlapping is how a cursor written by
+ * one gets replaced by an older one from the other, how a first sync that
+ * failed still leaves both sides mixed, and how a change of owner counts a
+ * queue a round is busy emptying. One lock on one of the doors, which is what
+ * this had, only closes that door.
  *
  * Each public function wraps its own body. The bodies call each other directly
  * — a settle runs a round inside itself, and if the inner call waited for the
@@ -55,6 +56,20 @@ export type FirstSyncLook =
   | { kind: 'unauthorized' }
   | { kind: 'refused'; status: number | null };
 
+/** What the person holding the device answered, when they were asked. */
+export type AdoptAnswer = 'discard' | 'keep';
+
+/**
+ * `other-account`: the rows belong to an account that is not this session's,
+ * and `atRisk` of them have not reached that account's cloud. `unknown-owner`:
+ * a device from before accounts, whose `rows` no account has claimed.
+ */
+export type AdoptQuestion =
+  | { kind: 'other-account'; atRisk: number }
+  | { kind: 'unknown-owner'; rows: number };
+
+export type AdoptOutcome = { kind: 'adopted' } | AdoptQuestion;
+
 /**
  * What a device that has never synced should do, by what it finds on each
  * side. Ids are generated per device, so a block called "Gym" made on the
@@ -93,7 +108,8 @@ async function runSyncOnce(
   const send = deps.send ?? apiClient.sync;
   const repo = deps.repo ?? liveRepository;
 
-  const { token, cursor, joined } = await repo.readSyncState();
+  const state = await repo.readSyncState();
+  const { token, cursor, joined } = state;
   if (token === null) return { kind: 'unauthorized' };
 
   // The engine never answers the first-sync question on its own. Section 9 of
@@ -123,12 +139,24 @@ async function runSyncOnce(
     if (reply.kind === 'unauthorized') {
       // Drop the dead token, keep the cursor: the rows already downloaded are
       // still downloaded, and a password prompt should not cost a full resync.
-      await repo.writeSyncState({ token: null, cursor, joined });
+      await repo.writeSyncState({ ...state, token: null });
       return { kind: 'unauthorized' };
     }
     if (reply.kind === 'offline') return { kind: 'offline' };
     reportWarning('The server refused a sync round', reply);
     return { kind: 'refused', status: reply.status };
+  }
+
+  // The token and its account are only ever written together, so a reply that
+  // names another account is a defect somewhere. Its rows are not this
+  // device's to keep: nothing is applied, the queue stays, the cursor stays.
+  // What this round uploaded has already gone wherever the token points.
+  if (reply.userId !== undefined && state.userId !== null && reply.userId !== state.userId) {
+    reportError('A sync reply named another account than the one this device holds', {
+      stored: state.userId,
+      reply: reply.userId,
+    });
+    return { kind: 'refused', status: null };
   }
 
   await repo.applyFromServer(reply.changes);
@@ -144,7 +172,14 @@ async function runSyncOnce(
     overrides: keep(sent.overrides),
   });
 
-  await repo.writeSyncState({ token, cursor: reply.serverTime, joined });
+  // A device from before accounts learns its owner from the first reply that
+  // names one. An owner it already has is never replaced here: a different one
+  // stopped the round above.
+  await repo.writeSyncState({
+    ...state,
+    userId: state.userId ?? reply.userId ?? null,
+    cursor: reply.serverTime,
+  });
 
   // Cleared only if it is still the marker this round read: one raised while
   // the round was in flight is newer, survives, and the next round pays it.
@@ -242,7 +277,7 @@ async function runSettleFirstSync(
     await repo.replaceAllFromServer(reply.changes);
     const downloaded =
       reply.changes.projects.length + reply.changes.plans.length + reply.changes.overrides.length;
-    await repo.writeSyncState({ token: state.token, cursor: reply.serverTime, joined: true });
+    await repo.writeSyncState({ ...state, cursor: reply.serverTime, joined: true });
     // Read AFTER the replacement, unlike runSyncOnce, and on purpose: the marker
     // this replacement raised is already paid — the replacement is the full
     // download, applied to every key. Reading before would leave that marker
@@ -268,4 +303,86 @@ async function runSettleFirstSync(
     await repo.writeSyncState({ ...after, joined: true });
   }
   return outcome;
+}
+
+/**
+ * The one way a token from outside the engine reaches this device.
+ *
+ * A device holds one account's rows. A session for that same account changes
+ * the token and nothing else. A session for another account means the rows are
+ * somebody else's, and they leave, after a copy when any of them has not
+ * reached that somebody's cloud. A device from before accounts has no owner on
+ * record, and only the person holding it can say whether its rows are theirs.
+ *
+ * Through the door like everything else here: it reads the queue a round is
+ * busy emptying, and it writes the state a round is about to write.
+ */
+export function adoptSession(
+  session: Session,
+  answer: AdoptAnswer | null,
+  deps: { repo?: BlockRepository; today?: () => string } = {},
+): Promise<AdoptOutcome> {
+  return oneAtATime(() => runAdoptSession(session, answer, deps));
+}
+
+async function runAdoptSession(
+  session: Session,
+  answer: AdoptAnswer | null,
+  deps: { repo?: BlockRepository; today?: () => string },
+): Promise<AdoptOutcome> {
+  const repo = deps.repo ?? liveRepository;
+  const today = deps.today ?? (() => new Date().toISOString().slice(0, 10));
+  const state = await repo.readSyncState();
+
+  if (state.userId === session.userId) {
+    await repo.writeSyncState({ ...state, token: session.token });
+    return { kind: 'adopted' };
+  }
+
+  // Not the same account, or not known to be: the cursor goes as well. One
+  // taken from another account's stream would skip every row stamped before it.
+  const fresh = { token: session.token, userId: session.userId, cursor: null, joined: false };
+
+  if (state.userId === null) {
+    const rows = await repo.countLocalRows();
+    if (rows > 0 && answer === null) return { kind: 'unknown-owner', rows };
+    if (rows > 0 && answer === 'discard') await resetDevice(repo, today(), true);
+    // 'keep' leaves the rows to the first-sync question, which asks again when
+    // the cloud holds rows too. It is never a merge made here.
+    await repo.writeSyncState(fresh);
+    return { kind: 'adopted' };
+  }
+
+  const atRisk = await countAtRisk(repo, state.joined);
+  // 'keep' is no answer for rows known to be another account's.
+  if (atRisk > 0 && answer !== 'discard') return { kind: 'other-account', atRisk };
+  await resetDevice(repo, today(), atRisk > 0);
+  await repo.writeSyncState(fresh);
+  return { kind: 'adopted' };
+}
+
+/**
+ * What would be lost for good if this device's rows left now. A joined device
+ * has delivered everything but its queue; one that never joined has delivered
+ * nothing at all, queued or not.
+ */
+async function countAtRisk(repo: BlockRepository, joined: boolean): Promise<number> {
+  if (!joined) return repo.countLocalRows();
+  const pending = await repo.listPending();
+  return pending.projects.length + pending.plans.length + pending.overrides.length;
+}
+
+/**
+ * Rows, queue and full-download marker, emptied in one step; the sync state is
+ * the caller's to write. The copy comes first, as in take-the-cloud.
+ */
+async function resetDevice(repo: BlockRepository, stamp: string, keepCopy: boolean): Promise<void> {
+  if (keepCopy) await repo.keepDiscardedCopy(stamp);
+  // `[]`, never a removed key: `ensureMigrated` refills a missing v2 key from
+  // tt.*.v1, and those rows belong to whoever used this device before.
+  await repo.replaceAllFromServer({ projects: [], plans: [], overrides: [] });
+  // Overwriting a damaged key just raised the marker. The next owner starts at
+  // cursor null, which is the full download it asks for.
+  const owed = await repo.readResyncOwed();
+  if (owed !== null) await repo.clearResyncOwed(owed);
 }
