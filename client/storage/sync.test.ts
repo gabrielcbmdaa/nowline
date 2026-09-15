@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import type { BlockPlan } from '../domain/types';
 
 vi.mock('../reportError', () => ({
@@ -7,6 +8,7 @@ vi.mock('../reportError', () => ({
   reportWarning: vi.fn(),
 }));
 
+import { reportError } from '../reportError';
 import { LocalStorageRepository } from './localStorageRepository';
 import { firstSyncDecision, inspectFirstSync, settleFirstSync, syncOnce } from './sync';
 
@@ -23,6 +25,8 @@ const plan: BlockPlan = {
   updatedAt: '2026-09-03T00:00:00.000Z',
   deletedAt: null,
 };
+
+const reported = reportError as Mock;
 
 const emptyReply = (serverTime: string) => ({
   serverTime,
@@ -685,6 +689,7 @@ describe('a full download once damaged rows have been overwritten', () => {
 describe('the account the device holds', () => {
   beforeEach(() => {
     localStorage.clear();
+    reported.mockClear();
   });
 
   it('keeps the account when the server stops accepting the token', async () => {
@@ -732,5 +737,39 @@ describe('the account the device holds', () => {
     await settleFirstSync('upload-mine', { send, repo });
 
     expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+  });
+
+  it('learns the account from the first reply that names one', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: null, cursor: 'T0', joined: true });
+    const send = vi.fn().mockResolvedValue({ ...emptyReply('T1'), userId: 'u1' });
+
+    await syncOnce({ send, repo });
+
+    // Every device from before accounts reaches here once. After that round it
+    // knows whose rows it holds, long before a second account exists.
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+  });
+
+  it('takes nothing from a reply that names another account', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T0', joined: true });
+    await repo.savePlan({ ...plan, id: 'mine' });
+    const send = vi.fn().mockResolvedValue({
+      serverTime: 'T1',
+      changes: { projects: [], plans: [{ ...plan, id: 'theirs' }], overrides: [] },
+      rejected: [],
+      userId: 'u2',
+    });
+
+    const outcome = await syncOnce({ send, repo });
+
+    // The token and its account are only ever written together, so this is a
+    // defect somewhere. Applying the reply would put u2's rows on u1's device.
+    expect(outcome).toEqual({ kind: 'refused', status: null });
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+    expect((await repo.listPending()).plans).toEqual(['mine']);
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T0', joined: true });
+    expect(reported).toHaveBeenCalledOnce();
   });
 });

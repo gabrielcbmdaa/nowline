@@ -3,7 +3,7 @@ import { isFailure } from './apiClient';
 import type { SentRows } from './localStorageRepository';
 import { repository as liveRepository } from './repository';
 import type { BlockRepository } from './repository';
-import { reportWarning } from '../reportError';
+import { reportError, reportWarning } from '../reportError';
 
 /**
  * Nothing in this module runs while something else in it is running.
@@ -132,6 +132,18 @@ async function runSyncOnce(
     return { kind: 'refused', status: reply.status };
   }
 
+  // The token and its account are only ever written together, so a reply that
+  // names another account is a defect somewhere. Its rows are not this
+  // device's to keep: nothing is applied, the queue stays, the cursor stays.
+  // What this round uploaded has already gone wherever the token points.
+  if (reply.userId !== undefined && state.userId !== null && reply.userId !== state.userId) {
+    reportError('A sync reply named another account than the one this device holds', {
+      stored: state.userId,
+      reply: reply.userId,
+    });
+    return { kind: 'refused', status: null };
+  }
+
   await repo.applyFromServer(reply.changes);
 
   // Anything the server named as refused stays owed, however it was sent.
@@ -145,7 +157,14 @@ async function runSyncOnce(
     overrides: keep(sent.overrides),
   });
 
-  await repo.writeSyncState({ ...state, cursor: reply.serverTime });
+  // A device from before accounts learns its owner from the first reply that
+  // names one. An owner it already has is never replaced here: a different one
+  // stopped the round above.
+  await repo.writeSyncState({
+    ...state,
+    userId: state.userId ?? reply.userId ?? null,
+    cursor: reply.serverTime,
+  });
 
   // Cleared only if it is still the marker this round read: one raised while
   // the round was in flight is newer, survives, and the next round pays it.
