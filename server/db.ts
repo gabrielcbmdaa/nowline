@@ -13,12 +13,23 @@ export type UserRow = {
   verifiedAt: Date | null;
   createdAt: Date;
 };
+export type LinkPurpose = 'verify' | 'reset' | 'change-email';
+export type EmailLinkRow = {
+  /** sha256 of the token, as sessions store theirs; the token itself is never stored. */
+  tokenHash: string;
+  userId: string;
+  purpose: LinkPurpose;
+  /** The address it went to; for change-email, the new one. */
+  email: string;
+  expiresAt: Date;
+};
 export type AttemptRow = { key: string; count: number; windowStartedAt: Date };
 
 export function collections(db: Db) {
   return {
     users: db.collection<UserRow>('users'),
     sessions: db.collection<SessionRow>('sessions'),
+    emailLinks: db.collection<EmailLinkRow>('emailLinks'),
     projects: db.collection('projects'),
     plans: db.collection('plans'),
     overrides: db.collection('overrides'),
@@ -51,6 +62,12 @@ export async function connect(db: Db): Promise<Db> {
   // registration collides with the first and is told its address is taken.
   await dropIndexIfPresent(c.users, 'username_1');
   await c.sessions.createIndex({ tokenHash: 1 }, { unique: true });
+  await c.emailLinks.createIndex({ tokenHash: 1 }, { unique: true });
+  // Mongo removes an expired link on its own, within a minute; consumeLink
+  // still checks expiresAt itself, for that minute.
+  await c.emailLinks.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  // Issuing a link first deletes the earlier ones of that user and purpose.
+  await c.emailLinks.createIndex({ userId: 1, purpose: 1 });
   await c.attempts.createIndex({ key: 1 }, { unique: true });
   // The longest window in attempts.ts is an hour. Without this, every IP that
   // ever made a call would leave a row behind for good.

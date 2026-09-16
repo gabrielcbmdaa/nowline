@@ -10,7 +10,8 @@ import { collections } from './db.js';
 
 const BYTES = 32;
 
-function fingerprint(token: string): string {
+/** Exported for links.ts, which stores an emailed token the way a session is stored. */
+export function fingerprint(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 

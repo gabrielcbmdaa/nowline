@@ -147,4 +147,15 @@ describe('the database', () => {
     expect(isDuplicateKeyOn(error, 'tokenHash')).toBe(false);
     expect(isDuplicateKeyOn(new Error('duplicate key'), 'email')).toBe(false);
   });
+
+  it('indexes email links by hash, by expiry with a TTL, and by owner and purpose', async () => {
+    const db = await withTestDb();
+    await connect(db);
+
+    const indexes = await db.collection('emailLinks').indexes();
+    expect(indexes.some((index) => index.key.tokenHash === 1 && index.unique === true)).toBe(true);
+    const ttl = indexes.find((index) => index.key.expiresAt === 1);
+    expect(ttl?.expireAfterSeconds).toBe(0);
+    expect(indexes.some((index) => index.key.userId === 1 && index.key.purpose === 1)).toBe(true);
+  });
 });
