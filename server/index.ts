@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Db } from 'mongodb';
 import type { MailConfig, Mailer } from './mail.js';
+import { emailRoute } from './routes/email.js';
 import { loginRoute } from './routes/login.js';
 import { recoveryRoute } from './routes/recovery.js';
 import { registerRoute } from './routes/register.js';
@@ -31,6 +32,7 @@ export function createApp(db: Db, options: AppOptions): express.Express {
   app.use(loginRoute(db));
   app.use(registerRoute(db, options));
   app.use(recoveryRoute(db, options));
+  app.use(emailRoute(db, options));
   app.use(sessionRoute(db));
   app.use(syncRoute(db));
 
