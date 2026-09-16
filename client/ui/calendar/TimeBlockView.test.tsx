@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addDays, dateKeyToMidnight } from '../../domain/dates';
 import { resolveOccurrence } from '../../domain/recurrence';
@@ -192,5 +192,37 @@ describe('a block that runs past midnight overflows its day instead of moving', 
     expect(parseFloat(block!.style.top) + parseFloat(block!.style.height)).toBeGreaterThan(
       1536,
     );
+  });
+});
+
+const lunch: ResolvedOccurrence = {
+  planId: 'p1',
+  date: '2026-09-14',
+  title: 'Lunch',
+  project: null,
+  status: 'done',
+  displayStart: new Date(2026, 8, 14, 11, 30),
+  displayEnd: new Date(2026, 8, 14, 12, 15),
+};
+
+describe('TimeBlockView accessible name includes the half of the clock', () => {
+  afterEach(cleanup);
+
+  it('names a crossing block with both meridiems, without changing the painted time', () => {
+    render(
+      <TimeBlockView occurrence={crossing} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Late session, 11:50 PM - 12:20 AM' }),
+    ).toBeTruthy();
+    expect(document.querySelector('.block__time')?.textContent).toBe('11:50 - 12:20');
+  });
+
+  it('names a lunch block with AM then PM, so the meridiem is not a midnight special', () => {
+    render(
+      <TimeBlockView occurrence={lunch} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+    );
+    expect(screen.getByRole('button', { name: 'Lunch, 11:30 AM - 12:15 PM' })).toBeTruthy();
+    expect(document.querySelector('.block__time')?.textContent).toBe('11:30 - 12:15');
   });
 });

@@ -15,6 +15,14 @@ export function formatTime(date: Date): string {
   return `${hour}:${minutes}`;
 }
 
+export function formatTimeWithMeridiem(date: Date): string {
+  return `${formatTime(date)} ${date.getHours() < 12 ? 'AM' : 'PM'}`;
+}
+
+export function accessibleBlockName(title: string, start: Date, end: Date): string {
+  return `${title}, ${formatTimeWithMeridiem(start)} - ${formatTimeWithMeridiem(end)}`;
+}
+
 /** Hour gutter labels read "5 AM", "12 PM". */
 export function formatHourLabel(hour: number): string {
   const display = hour % 12 || 12;
@@ -28,6 +36,22 @@ export function formatDayHeading(dateKey: string, now: Date): string {
     day: 'numeric',
     month: 'short',
   });
+}
+
+/**
+ * Grid label, two lines, so it fits in the hour gutter (56px) instead of
+ * running into the block column. The calendar bar still uses formatDayHeading.
+ */
+export function formatDayGutterHeading(
+  dateKey: string,
+  now: Date,
+): { weekday: string; monthDay: string | null } {
+  if (dateKey === toDateKey(now)) return { weekday: 'Today', monthDay: null };
+  const date = dateKeyToMidnight(dateKey);
+  return {
+    weekday: date.toLocaleDateString('en-US', { weekday: 'short' }),
+    monthDay: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  };
 }
 
 /** `<input type="time">` speaks 24-hour "HH:MM". */

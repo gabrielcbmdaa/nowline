@@ -1,7 +1,7 @@
 import { clampMinute, DAY_HEIGHT, floorToQuarterHour, minuteToPixel, pixelToMinute } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { toDateKey } from '../../domain/dates';
-import { formatDayHeading, formatHourLabel } from '../format';
+import { formatDayGutterHeading, formatHourLabel } from '../format';
 import { NowLine } from './NowLine';
 import { TimeBlockView } from './TimeBlockView';
 
@@ -26,6 +26,7 @@ export function DaySection({
   onToggleTimer,
 }: Props) {
   const isToday = date === toDateKey(now);
+  const gutterHeading = formatDayGutterHeading(date, now);
 
   return (
     <section
@@ -40,7 +41,12 @@ export function DaySection({
       }}
     >
       <div className="day__separator">
-        <span className="day__label">{formatDayHeading(date, now)}</span>
+        <span className="day__label">
+          <span className="day__label-line">{gutterHeading.weekday}</span>
+          {gutterHeading.monthDay !== null && (
+            <span className="day__label-line">{gutterHeading.monthDay}</span>
+          )}
+        </span>
       </div>
 
       {HOURS.map((hour) => (
