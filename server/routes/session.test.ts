@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { connect } from '../db.js';
 import { testApp } from '../testing/app.js';
 import { identify, issueToken } from '../identity.js';
+import { insertUser } from '../testing/accounts.js';
 import { call } from '../testing/http.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
@@ -56,5 +57,38 @@ describe('logout', () => {
     // stranger which strings are live tokens.
     expect(unknown.status).toBe(204);
     expect(missing.status).toBe(204);
+  });
+});
+
+describe('me', () => {
+  beforeEach(async () => {
+    const db = await withTestDb();
+    await clearTestDb(db);
+    await connect(db);
+  });
+  afterAll(closeTestDb);
+
+  it('says who the session is, with the address and whether it is confirmed', async () => {
+    const db = await withTestDb();
+    const confirmedAt = new Date('2026-09-15T12:00:00.000Z');
+    const { userId } = await insertUser(db, {
+      email: 'ana@example.com',
+      password: 'correct horse battery',
+      verifiedAt: confirmedAt,
+    });
+    const token = await issueToken(db, userId);
+
+    const reply = await call(testApp(db), '/api/auth/me', { token });
+
+    expect(reply.status).toBe(200);
+    expect(reply.body).toEqual({ userId, email: 'ana@example.com', verifiedAt: confirmedAt.toISOString() });
+  });
+
+  it('answers 401 without a token, and with a session whose account is gone', async () => {
+    const db = await withTestDb();
+    const orphan = await issueToken(db, 'no-such-account');
+
+    expect((await call(testApp(db), '/api/auth/me')).status).toBe(401);
+    expect((await call(testApp(db), '/api/auth/me', { token: orphan })).status).toBe(401);
   });
 });
