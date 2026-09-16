@@ -220,7 +220,7 @@ client/storage/        the repository interface and its localStorage implementat
 client/storage/sync.ts one round: upload what is owed, download what is missing
 client/state/          one module-level store, exposed through useSyncExternalStore
 client/ui/             React components; client/ui/calendar/ is the strip
-server/                Express + MongoDB: POST /api/auth/login, POST /api/sync, GET /api/health
+server/                Express + MongoDB: the /api/auth/ routes (register, login, logout, me, send-confirmation, change-email, request-reset, confirm, reset), POST /api/sync, GET /api/health
 ```
 
 No router, no state library, no CSS framework, no calendar library. React 19, TypeScript,

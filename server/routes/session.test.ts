@@ -43,7 +43,7 @@ describe('logout', () => {
     await post(db, '/api/auth/logout', {}, phone);
 
     // Signing one device out is not signing the person out. Only a password
-    // reset, in a later plan, ends every session of an account at once.
+    // reset (revokeAllFor, in routes/recovery.ts) ends every session of an account at once.
     expect(await identify(db, `Bearer ${laptop}`)).toBe('u1');
   });
 
