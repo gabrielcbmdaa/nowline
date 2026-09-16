@@ -17,16 +17,18 @@ the API and for the test suite.
 ```bash
 pnpm install
 pnpm dev              # http://localhost:5124; add --host to open on a phone
-MONGO_URL=mongodb://127.0.0.1:27017 MONGO_DB=nowline_dev pnpm dev:server   # 127.0.0.1:3001
+MONGO_URL=mongodb://127.0.0.1:27017 MONGO_DB=nowline_dev PUBLIC_URL=http://localhost:5124 MAIL_TRANSPORT=console pnpm dev:server   # 127.0.0.1:3001
 pnpm test             # needs MongoDB on 127.0.0.1:27017
 pnpm build            # eslint, both type-checks, then vite build
 pnpm preview          # the production build, on the same origin as dev (stop dev first)
 ```
 
-The server refuses to start without `MONGO_URL` and `MONGO_DB` — it never defaults
-the database name. `pnpm test` writes only to `nowline_test_*` databases on
-127.0.0.1:27017. See [CLAUDE.md](CLAUDE.md) for bringing MongoDB up on this machine,
-including the open-file limit before `mongod`.
+The server refuses to start without `MONGO_URL`, `MONGO_DB`, `PUBLIC_URL` and
+`MAIL_TRANSPORT` — it never defaults the database name or the way email leaves.
+`console` prints every email on the terminal, link included; `zavu` needs
+`MAIL_API_KEY` and `MAIL_SENDER` as well. `pnpm test` writes only to `nowline_test_*`
+databases on 127.0.0.1:27017 and sends nothing. See [CLAUDE.md](CLAUDE.md) for bringing
+MongoDB up on this machine, including the open-file limit before `mongod`.
 
 ## Deploy
 
@@ -40,8 +42,9 @@ calling `/api/sync` against a server that does not know what that is yet.
 
 On the server, the Node process runs from compiled `dist-server/` on `127.0.0.1:3001`,
 behind nginx's `location /api/`; its configuration lives in a `.env` on the machine,
-not in this repository. Host, user
-and path live in repository secrets.
+not in this repository: `MONGO_URL`, `MONGO_DB`, `PORT`, `PUBLIC_URL` (the origin every
+emailed link points at), `MAIL_TRANSPORT=zavu`, `MAIL_API_KEY` and `MAIL_SENDER` (the
+Zavu sender id). Host, user and path live in repository secrets.
 
 The `/api/auth/` routes sit behind an nginx `limit_req` as well — coarse on purpose:
 the real rules live in Express, where they are tested, and this stops a flood before it

@@ -1,5 +1,6 @@
 import { openDatabase } from './db.js';
 import { createApp, readConfig } from './index.js';
+import { mailerFor } from './mail.js';
 
 /**
  * The only job of this file is to start the process, and nothing imports it —
@@ -11,13 +12,13 @@ import { createApp, readConfig } from './index.js';
  * A file that always starts cannot be wrong about whether it should.
  */
 function start(): void {
-  const { url, dbName, port } = readConfig();
+  const { url, dbName, port, publicUrl, mail } = readConfig();
   openDatabase(url, dbName)
     .then((db) => {
       // 127.0.0.1 on purpose, as the spec's deployment section requires:
       // nginx is the only thing that talks to the world, and a process that
       // binds every interface is reachable the moment a firewall rule moves.
-      createApp(db).listen(port, '127.0.0.1', () => {
+      createApp(db, { mailer: mailerFor(mail), publicUrl }).listen(port, '127.0.0.1', () => {
         console.log(`nowline server listening on 127.0.0.1:${port}`);
       });
     })

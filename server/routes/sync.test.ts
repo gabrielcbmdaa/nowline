@@ -1,14 +1,14 @@
 import type { Db } from 'mongodb';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { collections, connect } from '../db.js';
-import { createApp } from '../index.js';
+import { testApp } from '../testing/app.js';
 import { saveRow } from './sync.js';
 import { issueToken } from '../identity.js';
 import { call } from '../testing/http.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
 const post = (db: Db, path: string, body: unknown, token?: string) =>
-  call(createApp(db), path, { method: 'POST', body, token });
+  call(testApp(db), path, { method: 'POST', body, token });
 
 const empty = () => ({ projects: [], plans: [], overrides: [] });
 

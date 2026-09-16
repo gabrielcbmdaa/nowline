@@ -2,14 +2,14 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIMITS } from '../attempts.js';
 import { connect } from '../db.js';
-import { createApp } from '../index.js';
+import { testApp } from '../testing/app.js';
 import { identify } from '../identity.js';
 import { insertUser } from '../testing/accounts.js';
 import { call } from '../testing/http.js';
 import { clearTestDb, closeTestDb, withTestDb } from '../testing/mongo.js';
 
 const post = (db: Db, path: string, body: unknown, headers?: Record<string, string>) =>
-  call(createApp(db), path, { method: 'POST', body, headers });
+  call(testApp(db), path, { method: 'POST', body, headers });
 
 const gabriel = { email: 'gabriel@example.com', password: 'correct horse' };
 
