@@ -2,6 +2,7 @@ import express from 'express';
 import type { Db } from 'mongodb';
 import type { MailConfig, Mailer } from './mail.js';
 import { loginRoute } from './routes/login.js';
+import { registerRoute } from './routes/register.js';
 import { sessionRoute } from './routes/session.js';
 import { syncRoute } from './routes/sync.js';
 
@@ -14,7 +15,7 @@ export type AppOptions = { mailer: Mailer; publicUrl: string };
  * that send email get the mailer from here, never from a module: that is the
  * seam the tests use to read what would have been sent.
  */
-export function createApp(db: Db, _options: AppOptions): express.Express {
+export function createApp(db: Db, options: AppOptions): express.Express {
   const app = express();
   // Trust X-Forwarded-For only when the connection itself comes from this
   // machine, which is where nginx connects from. `true` would let anyone send
@@ -27,6 +28,7 @@ export function createApp(db: Db, _options: AppOptions): express.Express {
   });
 
   app.use(loginRoute(db));
+  app.use(registerRoute(db, options));
   app.use(sessionRoute(db));
   app.use(syncRoute(db));
 
