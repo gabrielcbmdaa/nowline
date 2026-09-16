@@ -51,6 +51,14 @@ export async function revokeSession(db: Db, authorization: string | undefined): 
   if (token) await revokeToken(db, token);
 }
 
+/**
+ * Every session of an account, on every device. What a password reset does:
+ * whoever asked for it no longer trusts where the account is signed in.
+ */
+export async function revokeAllFor(db: Db, userId: string): Promise<void> {
+  await collections(db).sessions.deleteMany({ userId });
+}
+
 function readBearer(authorization: string | undefined): string | null {
   if (!authorization) return null;
   const [scheme, value] = authorization.split(' ');

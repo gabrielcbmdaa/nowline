@@ -59,3 +59,9 @@ export async function consumeLink(
     expiresAt: { $gt: new Date() },
   });
 }
+
+/**
+ * One answer for a link that is used, expired, for another purpose, or never
+ * existed: telling them apart would tell a stranger which strings were links.
+ */
+export const LINK_GONE = { error: 'link expired or used' };
