@@ -113,4 +113,14 @@ describe('the server', () => {
     expect(reply.text).not.toMatch(/at .*\(/);
     expect(reply.body).toEqual({ error: 'bad request' });
   });
+
+  it("trusts forwarded addresses from loopback only, not from anyone ('loopback', never true)", async () => {
+    const db = await withTestDb();
+
+    // Express keeps what app.set was given. A behavioural proof needs a socket
+    // that is not from this machine, which this suite does not have; this pins
+    // that the one-word swap to `true` — which trusts every X-Forwarded-For —
+    // cannot slip through.
+    expect(testApp(db).get('trust proxy')).toBe('loopback');
+  });
 });

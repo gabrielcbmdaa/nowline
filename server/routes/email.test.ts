@@ -274,4 +274,18 @@ describe('send-confirmation', () => {
 
     expect((await post('/api/auth/send-confirmation', {})).status).toBe(401);
   });
+
+  it('refuses a fourth resend within the hour: the limit that keeps a squatter out of an inbox', async () => {
+    const db = await withTestDb();
+    const { post, sent } = setUp(db);
+    const ana = await signedIn(db, { email: 'ana@example.com' });
+
+    for (let i = 0; i < LIMITS.sendConfirmation.max; i += 1) {
+      expect((await post('/api/auth/send-confirmation', {}, ana.token)).status).toBe(200);
+    }
+
+    const fourth = await post('/api/auth/send-confirmation', {}, ana.token);
+    expect(fourth.status).toBe(429);
+    expect(sent).toHaveLength(LIMITS.sendConfirmation.max);
+  });
 });
