@@ -38,6 +38,22 @@ export function formatDayHeading(dateKey: string, now: Date): string {
   });
 }
 
+/**
+ * Grid label, two lines, so it fits in the hour gutter (56px) instead of
+ * running into the block column. The calendar bar still uses formatDayHeading.
+ */
+export function formatDayGutterHeading(
+  dateKey: string,
+  now: Date,
+): { weekday: string; monthDay: string | null } {
+  if (dateKey === toDateKey(now)) return { weekday: 'Today', monthDay: null };
+  const date = dateKeyToMidnight(dateKey);
+  return {
+    weekday: date.toLocaleDateString('en-US', { weekday: 'short' }),
+    monthDay: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  };
+}
+
 /** `<input type="time">` speaks 24-hour "HH:MM". */
 export function minuteToTimeValue(minute: number): string {
   const hours = Math.floor(minute / 60);

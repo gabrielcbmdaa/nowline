@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accessibleBlockName,
+  formatDayGutterHeading,
   formatTimeWithMeridiem,
   minuteToTimeValue,
   timeValueToMinute,
@@ -49,6 +50,24 @@ describe('formatTimeWithMeridiem', () => {
     expect(formatTimeWithMeridiem(new Date(2026, 8, 14, 12, 0))).toBe('12:00 PM');
     expect(formatTimeWithMeridiem(new Date(2026, 8, 14, 12, 15))).toBe('12:15 PM');
     expect(formatTimeWithMeridiem(new Date(2026, 8, 5, 23, 50))).toBe('11:50 PM');
+  });
+});
+
+describe('formatDayGutterHeading', () => {
+  const now = new Date(2026, 8, 15, 12, 0);
+
+  it('returns Today with no second line', () => {
+    expect(formatDayGutterHeading('2026-09-15', now)).toEqual({
+      weekday: 'Today',
+      monthDay: null,
+    });
+  });
+
+  it('puts the weekday on the first line and month plus day on the second', () => {
+    expect(formatDayGutterHeading('2026-09-16', now)).toEqual({
+      weekday: 'Wed',
+      monthDay: 'Sep 16',
+    });
   });
 });
 
