@@ -10,13 +10,14 @@ import {
 } from './geometry';
 
 describe('geometry', () => {
-  it('places 5:30 at pixel 352', () => {
-    expect(minuteToPixel(330)).toBe(352);
+  it('puts one pixel to one minute, so 5:30 is pixel 330', () => {
+    expect(minuteToPixel(330)).toBe(330);
   });
 
   it('spans a full day', () => {
-    expect(PIXELS_PER_HOUR).toBe(64);
-    expect(DAY_HEIGHT).toBe(1536);
+    expect(PIXELS_PER_HOUR).toBe(60);
+    // 1440 is also MINUTES_PER_DAY: at one pixel a minute the two agree.
+    expect(DAY_HEIGHT).toBe(1440);
     expect(minuteToPixel(1440)).toBe(DAY_HEIGHT);
   });
 

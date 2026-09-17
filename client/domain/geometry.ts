@@ -1,9 +1,11 @@
 /**
- * The single source of truth for the calendar scale.
- * Turning this constant into a state value is all a future pinch-to-zoom
- * needs: every position in the app is derived from it.
+ * The single source of truth for the calendar scale, in pixels per hour.
+ *
+ * 60 makes one pixel one minute: `minuteToPixel(m)` is `m`, and a day is as
+ * many pixels tall as it has minutes. Turning this constant into a state value
+ * is all a pinch-to-zoom needs: every position in the app is derived from it.
  */
-export const PIXELS_PER_HOUR = 64;
+export const PIXELS_PER_HOUR = 60;
 
 export const MINUTES_PER_DAY = 24 * 60;
 

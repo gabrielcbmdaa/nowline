@@ -56,14 +56,14 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(hoursIn('2026-09-03')).toBe(24);
   });
 
-  // 128px is two hours at 64px/hour: the distance between the 01:30 and 03:30 marks.
-  const TWO_HOURS = '128px';
+  // 120px is two hours at 60px/hour: the distance between the 01:30 and 03:30 marks.
+  const TWO_HOURS = '120px';
 
   it('on an ordinary day', () => {
     expect(draw(doneBlockOn('2026-09-03', 8, 3))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
-      top: '96px',
+      top: '90px',
     });
   });
 
@@ -77,7 +77,7 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-10-25', 9, 25))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
-      top: '96px',
+      top: '90px',
     });
   });
 
@@ -92,7 +92,7 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-03-29', 2, 29))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
-      top: '96px',
+      top: '90px',
     });
   });
 });
@@ -125,14 +125,14 @@ function scheduledBlockOn(date: string, month: number, day: number): ResolvedOcc
 describe('TimeBlockView draws a planned block at its planned length', () => {
   afterEach(cleanup);
 
-  // 192px is three hours at 64px/hour: the distance between the 01:00 and 04:00 marks.
-  const THREE_HOURS = '192px';
+  // 180px is three hours at 60px/hour: the distance between the 01:00 and 04:00 marks.
+  const THREE_HOURS = '180px';
 
   it('on an ordinary day', () => {
     expect(draw(scheduledBlockOn('2026-10-18', 9, 18))).toEqual({
       label: '1:00 - 4:00',
       height: THREE_HOURS,
-      top: '64px',
+      top: '60px',
     });
   });
 
@@ -140,7 +140,7 @@ describe('TimeBlockView draws a planned block at its planned length', () => {
     expect(draw(scheduledBlockOn('2026-10-25', 9, 25))).toEqual({
       label: '1:00 - 4:00',
       height: THREE_HOURS,
-      top: '64px',
+      top: '60px',
     });
   });
 
@@ -148,7 +148,7 @@ describe('TimeBlockView draws a planned block at its planned length', () => {
     expect(draw(scheduledBlockOn('2026-03-29', 2, 29))).toEqual({
       label: '1:00 - 4:00',
       height: THREE_HOURS,
-      top: '64px',
+      top: '60px',
     });
   });
 });
@@ -173,12 +173,12 @@ describe('a block that runs past midnight overflows its day instead of moving', 
   afterEach(cleanup);
 
   it('starts at its true minute and keeps its whole length', () => {
-    // 23:50 is 1430 minutes in, and 1430/60*64 is 1525.33: where 23:50 actually is.
+    // 23:50 is 1430 minutes in, and at one pixel a minute that is pixel 1430.
     // The old clamp answered 1493.33 here, which is 23:20 — half an hour early.
     expect(draw(crossing)).toEqual({
       label: '11:50 - 12:20',
-      height: '32px',
-      top: '1525.3333333333333px',
+      height: '30px',
+      top: '1430px',
     });
   });
 
@@ -188,9 +188,9 @@ describe('a block that runs past midnight overflows its day instead of moving', 
     );
     expect(container.querySelectorAll('.block')).toHaveLength(1);
     const block = container.querySelector<HTMLElement>('.block');
-    // DAY_HEIGHT is 1536; the last half hour of this block is drawn below it.
+    // DAY_HEIGHT is 1440; the last half hour of this block is drawn below it.
     expect(parseFloat(block!.style.top) + parseFloat(block!.style.height)).toBeGreaterThan(
-      1536,
+      1440,
     );
   });
 });

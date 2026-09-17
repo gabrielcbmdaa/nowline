@@ -15,10 +15,12 @@ import { useBlockDrag } from './useBlockDrag';
 const MIN_BLOCK_HEIGHT = 18;
 
 /**
- * Stacked, the title and the time measure 30.5px together, so only blocks of half
- * an hour or more can hold both lines. Shorter ones keep them side by side.
+ * Stacked, the title and the time measure 30.5px together. At 60px/hour half an
+ * hour is exactly 30, so the threshold is 30 and the two lines give up half a
+ * pixel: the alternative is that no half-hour block stacks at the default
+ * scale, which is the shape most of them have.
  */
-const STACKED_MIN_HEIGHT = 32;
+const STACKED_MIN_HEIGHT = 30;
 
 /** Matches the dimming the done state used to get from CSS opacity. */
 const DONE_DIM = 0.75;
