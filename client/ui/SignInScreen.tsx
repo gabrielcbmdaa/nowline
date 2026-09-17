@@ -1,23 +1,11 @@
 import { useState, type JSX, type SubmitEvent } from 'react';
 import { reportError, reportWarning } from '../reportError';
-import { isFailure, login, logout, type ApiFailure, type Session } from '../storage/apiClient';
+import { isFailure, login, logout, type Session } from '../storage/apiClient';
 import { adoptSession, type AdoptAnswer, type AdoptQuestion } from '../storage/sync';
+import { failureMessage } from './failureMessage';
 import { OtherAccountPrompt } from './OtherAccountPrompt';
 
 type Props = { onSignedIn: () => void };
-
-function failureMessage(failure: ApiFailure): string {
-  if (failure.kind === 'unauthorized') {
-    return 'The username or password is wrong.';
-  }
-  if (failure.kind === 'offline') {
-    return 'No answer from the server. Check your connection.';
-  }
-  if (failure.status === 429) {
-    return 'Too many attempts. Try again in a few minutes.';
-  }
-  return `The server did not accept the request (${String(failure.status)}).`;
-}
 
 export function SignInScreen({ onSignedIn }: Props): JSX.Element {
   const [username, setUsername] = useState('');
@@ -78,7 +66,7 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
     try {
       const result = await login(username, password);
       if (isFailure(result)) {
-        setError(failureMessage(result));
+        setError(failureMessage(result, 'The username or password is wrong.'));
         return;
       }
 
