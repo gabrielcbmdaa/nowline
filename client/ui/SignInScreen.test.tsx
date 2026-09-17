@@ -89,7 +89,7 @@ describe('SignInScreen', () => {
   });
 
   it('says the password was refused, and keeps what was typed', async () => {
-    vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401 });
+    vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
     typeInto('Username', 'gabriel');
@@ -113,7 +113,7 @@ describe('SignInScreen', () => {
   });
 
   it('tells the owner the door is shut, not that the server is broken', async () => {
-    vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'refused', status: 429 });
+    vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'refused', status: 429, detail: null });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
     typeInto('Username', 'gabriel');
@@ -127,7 +127,7 @@ describe('SignInScreen', () => {
   });
 
   it('says nothing answered when there is no network', async () => {
-    vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'offline', status: null });
+    vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'offline', status: null, detail: null });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
     typeInto('Username', 'gabriel');

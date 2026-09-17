@@ -23,11 +23,11 @@ describe('apiClient', () => {
     // The device stores the token and its account as one pair. Half a pair is
     // a token it could not tell apart from somebody else's.
     vi.stubGlobal('fetch', reply(200, { token: 'abc' }));
-    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200 });
+    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
 
     // Half a pair, too: an account that is not a string names no account.
     vi.stubGlobal('fetch', reply(200, { token: 'abc', userId: 42 }));
-    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200 });
+    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
   });
 
   it('calls the path the app is served from, never another origin', async () => {
@@ -42,10 +42,15 @@ describe('apiClient', () => {
 
   it('tells a wrong password apart from a server that is not there', async () => {
     vi.stubGlobal('fetch', reply(401, { error: 'invalid credentials' }));
-    expect(await login('gabriel', 'wrong')).toEqual({ failed: true, kind: 'unauthorized', status: 401 });
+    expect(await login('gabriel', 'wrong')).toEqual({
+      failed: true,
+      kind: 'unauthorized',
+      status: 401,
+      detail: { error: 'invalid credentials' },
+    });
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
-    expect(await login('gabriel', 'whatever')).toEqual({ failed: true, kind: 'offline', status: null });
+    expect(await login('gabriel', 'whatever')).toEqual({ failed: true, kind: 'offline', status: null, detail: null });
   });
 
   it('sends the token in the header sync expects', async () => {
@@ -82,20 +87,20 @@ describe('apiClient', () => {
 
     // The error page the dev server serves for a malformed body is HTML. A
     // caller that trusted this would carry `undefined` into storage.
-    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200 });
+    expect(await login('gabriel', 'a-long-password')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
   });
 
   it('does not mistake a sync outcome for a failure', async () => {
     // The loop that calls this returns { kind: 'offline' } of its own. Sharing a
     // field name is not sharing a meaning.
     expect(isFailure({ kind: 'offline' })).toBe(false);
-    expect(isFailure({ failed: true, kind: 'offline', status: null })).toBe(true);
+    expect(isFailure({ failed: true, kind: 'offline', status: null, detail: null })).toBe(true);
   });
 
   it('refuses a 200 that is not the reply sync promised', async () => {
     vi.stubGlobal('fetch', reply(200, { something: 'else' }));
     const result = await sync('t', null, { projects: [], plans: [], overrides: [] });
-    expect(result).toEqual({ failed: true, kind: 'refused', status: 200 });
+    expect(result).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
   });
 
   it('keeps the real status when the door is shut', async () => {
@@ -103,13 +108,48 @@ describe('apiClient', () => {
     // guesses. Reporting that as anything else would tell the login screen the
     // server is broken when the password may well be right.
     vi.stubGlobal('fetch', reply(429, { error: 'too many attempts' }));
-    expect(await login('gabriel', 'whatever')).toEqual({ failed: true, kind: 'refused', status: 429 });
+    expect(await login('gabriel', 'whatever')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 429,
+      detail: { error: 'too many attempts' },
+    });
+  });
+
+  it('keeps the body of a refusal, so a screen can say which refusal it was', async () => {
+    vi.stubGlobal('fetch', reply(400, { error: 'password too short', minimum: 12 }));
+
+    expect(await login('ana@example.com', 'short')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 400,
+      detail: { error: 'password too short', minimum: 12 },
+    });
+  });
+
+  it('has no detail when a refusal carries no JSON object', async () => {
+    // nginx answers a dead upstream with an HTML page, which is not JSON.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 502,
+        ok: false,
+        json: async () => {
+          throw new SyntaxError('Unexpected token <');
+        },
+      }),
+    );
+    expect(await login('ana@example.com', 'whatever')).toEqual({ failed: true, kind: 'refused', status: 502, detail: null });
+
+    // A list is JSON but names no refusal.
+    vi.stubGlobal('fetch', reply(400, ['password too short']));
+    expect(await login('ana@example.com', 'whatever')).toEqual({ failed: true, kind: 'refused', status: 400, detail: null });
   });
 
   it('does not turn a 500 from sync into an answer', async () => {
     vi.stubGlobal('fetch', reply(500, { error: 'boom' }));
     const result = await sync('t', null, { projects: [], plans: [], overrides: [] });
-    expect(result).toEqual({ failed: true, kind: 'refused', status: 500 });
+    expect(result).toEqual({ failed: true, kind: 'refused', status: 500, detail: { error: 'boom' } });
   });
 
   it('gives up on a round that never answers, instead of waiting for ever', async () => {
@@ -151,6 +191,7 @@ describe('apiClient', () => {
       failed: true,
       kind: 'offline',
       status: null,
+      detail: null,
     });
   });
 
@@ -224,6 +265,6 @@ describe('apiClient', () => {
 
     // The engine compares this field with the account it holds. A number that
     // slipped through would compare unequal to every account there is.
-    expect(result).toEqual({ failed: true, kind: 'refused', status: 200 });
+    expect(result).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
   });
 });

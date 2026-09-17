@@ -22,6 +22,11 @@ export type ApiFailure = {
   failed: true;
   kind: 'offline' | 'unauthorized' | 'refused';
   status: number | null;
+  /**
+   * The body of a refusal when it is a JSON object — `{ error, minimum }` and the
+   * like — so a screen can say which refusal it was. `null` when there is none.
+   */
+  detail: Record<string, unknown> | null;
 };
 
 export function isFailure(result: unknown): result is ApiFailure {
@@ -43,6 +48,18 @@ function isSyncReply(value: unknown): value is SyncReply {
   );
 }
 
+async function detailOf(response: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const body: unknown = await response.json();
+    return typeof body === 'object' && body !== null && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+  } catch {
+    // An HTML error page from nginx, or no body at all.
+    return null;
+  }
+}
+
 async function post(path: string, body: unknown, token?: string): Promise<unknown> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -57,11 +74,15 @@ async function post(path: string, body: unknown, token?: string): Promise<unknow
     });
   } catch {
     // fetch only rejects when the request never got an answer at all.
-    return { failed: true, kind: 'offline', status: null };
+    return { failed: true, kind: 'offline', status: null, detail: null };
   }
 
-  if (response.status === 401) return { failed: true, kind: 'unauthorized', status: 401 };
-  if (!response.ok) return { failed: true, kind: 'refused', status: response.status };
+  if (response.status === 401) {
+    return { failed: true, kind: 'unauthorized', status: 401, detail: await detailOf(response) };
+  }
+  if (!response.ok) {
+    return { failed: true, kind: 'refused', status: response.status, detail: await detailOf(response) };
+  }
 
   // No content is an answer too: logout has nothing to say except that it
   // happened, and parsing an empty body would call that a refusal.
@@ -71,7 +92,7 @@ async function post(path: string, body: unknown, token?: string): Promise<unknow
     return await response.json();
   } catch {
     // A 200 whose body is not JSON is not the server we think it is.
-    return { failed: true, kind: 'refused', status: response.status };
+    return { failed: true, kind: 'refused', status: response.status, detail: null };
   }
 }
 
@@ -84,7 +105,7 @@ export async function login(username: string, password: string): Promise<Session
   // cannot tell apart from somebody else's.
   return typeof token === 'string' && typeof userId === 'string'
     ? { token, userId }
-    : { failed: true, kind: 'refused', status: 200 };
+    : { failed: true, kind: 'refused', status: 200, detail: null };
 }
 
 /** Ask the server to forget a session. It answers the same whether it knew the token or not. */
@@ -103,5 +124,5 @@ export async function sync(
   // A cast is a promise; this is a check. The loop reads reply.changes, and a
   // 200 that is not this shape would throw there — which the comment at the top
   // of this file says must never happen.
-  return isSyncReply(result) ? result : { failed: true, kind: 'refused', status: 200 };
+  return isSyncReply(result) ? result : { failed: true, kind: 'refused', status: 200, detail: null };
 }
