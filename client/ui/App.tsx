@@ -11,8 +11,8 @@ import {
   startSyncing,
   useAppState,
 } from '../state/store';
+import { AuthGate } from './AuthGate';
 import { FirstSyncScreen } from './FirstSyncScreen';
-import { SignInScreen } from './SignInScreen';
 import { Fab } from './Fab';
 import { TabBar } from './TabBar';
 import { CalendarScreen } from './calendar/CalendarScreen';
@@ -99,7 +99,7 @@ export function App() {
   }
 
   if (state.entry === 'signed-out') {
-    return <SignInScreen onSignedIn={onSignedIn} />;
+    return <AuthGate onSignedIn={onSignedIn} />;
   }
 
   if (state.entry === 'asking-first-sync') {

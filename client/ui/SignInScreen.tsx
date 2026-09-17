@@ -1,11 +1,12 @@
 import { useState, type JSX, type SubmitEvent } from 'react';
 import { isFailure, login } from '../storage/apiClient';
 import { failureMessage } from './failureMessage';
+import type { GateView } from './gate';
 import { useSessionHandoff } from './useSessionHandoff';
 
-type Props = { onSignedIn: () => void };
+type Props = { onSignedIn: () => void; onSwitch: (to: GateView) => void };
 
-export function SignInScreen({ onSignedIn }: Props): JSX.Element {
+export function SignInScreen({ onSignedIn, onSwitch }: Props): JSX.Element {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +79,26 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
           </button>
         </div>
       </form>
+      <div className="gate__links">
+        <button
+          className="button button--link"
+          type="button"
+          onClick={() => {
+            onSwitch('create');
+          }}
+        >
+          Create account
+        </button>
+        <button
+          className="button button--link"
+          type="button"
+          onClick={() => {
+            onSwitch('forgot');
+          }}
+        >
+          Forgot password?
+        </button>
+      </div>
     </div>
   );
 }

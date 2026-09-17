@@ -55,7 +55,7 @@ describe('SignInScreen', () => {
   it('keeps the token where the engine looks for it', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     const onSignedIn = vi.fn();
-    render(<SignInScreen onSignedIn={onSignedIn} />);
+    render(<SignInScreen onSignedIn={onSignedIn} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -73,7 +73,7 @@ describe('SignInScreen', () => {
   it('does not touch the joined flag when it stores a token', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -90,7 +90,7 @@ describe('SignInScreen', () => {
 
   it('says the password was refused, and keeps what was typed', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'wrong');
@@ -114,7 +114,7 @@ describe('SignInScreen', () => {
 
   it('tells the owner the door is shut, not that the server is broken', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'refused', status: 429, detail: null });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'the-right-one');
@@ -128,7 +128,7 @@ describe('SignInScreen', () => {
 
   it('says nothing answered when there is no network', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'offline', status: null, detail: null });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -141,7 +141,7 @@ describe('SignInScreen', () => {
   it('does not send a second request while the first is in the air', async () => {
     let release: (value: { token: string; userId: string }) => void = () => {};
     const login = vi.spyOn(apiClient, 'login').mockReturnValue(new Promise((resolve) => { release = resolve; }));
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -163,7 +163,7 @@ describe('SignInScreen', () => {
 
   it('does not mark a device as joined just because it signed in', async () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -181,7 +181,7 @@ describe('SignInScreen', () => {
     await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
     await repository.savePlan({ ...plan, id: 'theirs' });
     const onSignedIn = vi.fn();
-    render(<SignInScreen onSignedIn={onSignedIn} />);
+    render(<SignInScreen onSignedIn={onSignedIn} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'someone@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -202,7 +202,7 @@ describe('SignInScreen', () => {
     await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
     await repository.savePlan({ ...plan, id: 'theirs' });
     const onSignedIn = vi.fn();
-    render(<SignInScreen onSignedIn={onSignedIn} />);
+    render(<SignInScreen onSignedIn={onSignedIn} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'someone@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -229,7 +229,7 @@ describe('SignInScreen', () => {
     const logout = vi.spyOn(apiClient, 'logout').mockResolvedValue(true);
     await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
     await repository.savePlan({ ...plan, id: 'theirs' });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'someone@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -247,7 +247,7 @@ describe('SignInScreen', () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     vi.spyOn(sync, 'adoptSession').mockRejectedValue(new Error('quota exceeded'));
     const onSignedIn = vi.fn();
-    render(<SignInScreen onSignedIn={onSignedIn} />);
+    render(<SignInScreen onSignedIn={onSignedIn} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -261,7 +261,7 @@ describe('SignInScreen', () => {
 
   it('signs in with the email that was typed', async () => {
     const login = vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
@@ -271,10 +271,21 @@ describe('SignInScreen', () => {
   });
 
   it('leaves the address to the server, not to the browser', () => {
-    render(<SignInScreen onSignedIn={vi.fn()} />);
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={vi.fn()} />);
 
     const form = screen.getByRole('form', { name: 'Sign in' });
     if (!(form instanceof HTMLFormElement)) throw new Error('expected a form');
     expect(form.noValidate).toBe(true);
+  });
+
+  it('offers the two other ways in', () => {
+    const onSwitch = vi.fn();
+    render(<SignInScreen onSignedIn={vi.fn()} onSwitch={onSwitch} />);
+
+    clickButton('Create account');
+    expect(onSwitch).toHaveBeenLastCalledWith('create');
+
+    clickButton('Forgot password?');
+    expect(onSwitch).toHaveBeenLastCalledWith('forgot');
   });
 });
