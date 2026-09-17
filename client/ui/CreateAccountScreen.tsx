@@ -48,7 +48,7 @@ export function CreateAccountScreen({ onSignedIn, onSwitch }: Props): JSX.Elemen
             className="field__input"
             type="email"
             value={email}
-            autoComplete="email"
+            autoComplete="username"
             onChange={(event) => {
               setEmail(event.target.value);
             }}

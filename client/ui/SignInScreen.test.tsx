@@ -276,6 +276,8 @@ describe('SignInScreen', () => {
     const form = screen.getByRole('form', { name: 'Sign in' });
     if (!(form instanceof HTMLFormElement)) throw new Error('expected a form');
     expect(form.noValidate).toBe(true);
+    // What a password manager pairs with current-password is `username`, whatever the field holds.
+    expect(screen.getByLabelText('Email').getAttribute('autocomplete')).toBe('username');
   });
 
   it('offers the two other ways in', () => {

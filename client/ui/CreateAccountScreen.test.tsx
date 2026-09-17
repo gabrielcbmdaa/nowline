@@ -135,6 +135,7 @@ describe('CreateAccountScreen', () => {
     const form = screen.getByRole('form', { name: 'Create account' });
     if (!(form instanceof HTMLFormElement)) throw new Error('expected a form');
     expect(form.noValidate).toBe(true);
+    expect(screen.getByLabelText('Email').getAttribute('autocomplete')).toBe('username');
   });
 
   it('does not send a second request while the first is in the air', () => {
