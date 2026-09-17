@@ -28,12 +28,13 @@ const DONE_DIM = 0.75;
 type Props = {
   occurrence: ResolvedOccurrence;
   isToday: boolean;
+  pixelsPerHour: number;
   onTap: (occurrence: ResolvedOccurrence) => void;
   onToggleTimer: (occurrence: ResolvedOccurrence) => void;
 };
 
-export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Props) {
-  const drag = useBlockDrag(occurrence, () => onTap(occurrence));
+export function TimeBlockView({ occurrence, isToday, pixelsPerHour, onTap, onToggleTimer }: Props) {
+  const drag = useBlockDrag(occurrence, pixelsPerHour, () => onTap(occurrence));
   const clickFromGesture = useRef(false);
 
   const startMinute =
@@ -44,11 +45,11 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
     wallClockMinutesBetween(occurrence.displayStart, occurrence.displayEnd, occurrence.date) +
     drag.extraMinutes;
 
-  const height = Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT);
+  const height = Math.max(minuteToPixel(durationMinutes, pixelsPerHour), MIN_BLOCK_HEIGHT);
   // Drawn at its true start and left to overflow the day section, which does not
   // clip: a block that runs into the next day is one rectangle crossing the seam,
   // not two. Sliding it up to fit is what used to draw a 23:50 session at 23:30.
-  const top = minuteToPixel(startMinute);
+  const top = minuteToPixel(startMinute, pixelsPerHour);
 
   const baseColor = occurrence.project?.color ?? NO_PROJECT_COLOR;
   const background =

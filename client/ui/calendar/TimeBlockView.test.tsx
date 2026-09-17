@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addDays, dateKeyToMidnight } from '../../domain/dates';
+import { DEFAULT_PIXELS_PER_HOUR } from '../../domain/geometry';
 import { resolveOccurrence } from '../../domain/recurrence';
 import type { BlockPlan, ResolvedOccurrence } from '../../domain/types';
 import { TimeBlockView } from './TimeBlockView';
@@ -36,7 +37,7 @@ function doneBlockOn(date: string, month: number, day: number): ResolvedOccurren
 
 function draw(occurrence: ResolvedOccurrence) {
   const { container } = render(
-    <TimeBlockView occurrence={occurrence} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+    <TimeBlockView occurrence={occurrence} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
   );
   const block = container.querySelector<HTMLElement>('.block');
   if (!block) throw new Error('no block rendered');
@@ -184,11 +185,11 @@ describe('a block that runs past midnight overflows its day instead of moving', 
 
   it('is one rectangle, drawn once, that reaches past the end of its day', () => {
     const { container } = render(
-      <TimeBlockView occurrence={crossing} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+      <TimeBlockView occurrence={crossing} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
     );
     expect(container.querySelectorAll('.block')).toHaveLength(1);
     const block = container.querySelector<HTMLElement>('.block');
-    // DAY_HEIGHT is 1440; the last half hour of this block is drawn below it.
+    // 1440 is a full day at the default scale; the last half hour of this block is drawn below it.
     expect(parseFloat(block!.style.top) + parseFloat(block!.style.height)).toBeGreaterThan(
       1440,
     );
@@ -210,7 +211,7 @@ describe('TimeBlockView accessible name includes the half of the clock', () => {
 
   it('names a crossing block with both meridiems, without changing the painted time', () => {
     render(
-      <TimeBlockView occurrence={crossing} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+      <TimeBlockView occurrence={crossing} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
     );
     expect(
       screen.getByRole('button', { name: 'Late session, 11:50 PM - 12:20 AM' }),
@@ -220,7 +221,7 @@ describe('TimeBlockView accessible name includes the half of the clock', () => {
 
   it('names a lunch block with AM then PM, so the meridiem is not a midnight special', () => {
     render(
-      <TimeBlockView occurrence={lunch} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+      <TimeBlockView occurrence={lunch} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
     );
     expect(screen.getByRole('button', { name: 'Lunch, 11:30 AM - 12:15 PM' })).toBeTruthy();
     expect(document.querySelector('.block__time')?.textContent).toBe('11:30 - 12:15');

@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { addDays } from '../../domain/dates';
-import { DAY_HEIGHT, minuteToPixel } from '../../domain/geometry';
+import { dayHeight, minuteToPixel } from '../../domain/geometry';
 import { setVisibleDate as publishVisibleDate } from '../../state/store';
 
 /** Days kept mounted at once; 365 would be half a million pixels tall. */
@@ -13,7 +13,7 @@ export function buildWindow(centerDate: string): string[] {
   );
 }
 
-export function useInfiniteDays(initialDate: string) {
+export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
   const [days, setDays] = useState(() => buildWindow(initialDate));
   const [visibleDate, setVisibleDate] = useState(initialDate);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -28,9 +28,12 @@ export function useInfiniteDays(initialDate: string) {
   /** Read inside the scroll handler, which is created once. */
   const daysRef = useRef(days);
   const visibleDateRef = useRef(initialDate);
+  /** Read inside the scroll handler, which is created once. */
+  const pixelsPerHourRef = useRef(pixelsPerHour);
 
   useLayoutEffect(() => {
     daysRef.current = days;
+    pixelsPerHourRef.current = pixelsPerHour;
     const element = scrollRef.current;
     if (!element) return;
 
@@ -51,32 +54,34 @@ export function useInfiniteDays(initialDate: string) {
       relativeAdjust.current = 0;
       adjusting.current = false;
     }
-  }, [days]);
+  }, [days, pixelsPerHour]);
 
   const onScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element || adjusting.current) return;
 
+    const height = dayHeight(pixelsPerHourRef.current);
+
     const distanceToBottom =
       element.scrollHeight - element.scrollTop - element.clientHeight;
 
-    if (element.scrollTop < DAY_HEIGHT) {
+    if (element.scrollTop < height) {
       setDays((previous) => [addDays(previous[0], -1), ...previous.slice(0, -1)]);
-      relativeAdjust.current += DAY_HEIGHT;
-    } else if (distanceToBottom < DAY_HEIGHT) {
+      relativeAdjust.current += height;
+    } else if (distanceToBottom < height) {
       setDays((previous) => [
         ...previous.slice(1),
         addDays(previous[previous.length - 1], 1),
       ]);
       // Dropping the first day removes that height from above the viewport.
-      relativeAdjust.current -= DAY_HEIGHT;
+      relativeAdjust.current -= height;
     }
 
     // Never call a setter from inside a state updater: updaters must stay pure,
     // and React runs them twice in development.
     const index = Math.min(
       daysRef.current.length - 1,
-      Math.max(0, Math.floor((element.scrollTop + 1) / DAY_HEIGHT)),
+      Math.max(0, Math.floor((element.scrollTop + 1) / height)),
     );
     const nextVisible = daysRef.current[index];
     if (nextVisible !== visibleDateRef.current) {
@@ -96,10 +101,10 @@ export function useInfiniteDays(initialDate: string) {
     publishVisibleDate(date);
     // Put the requested minute a third of the way down the viewport.
     absoluteTarget.current =
-      half * DAY_HEIGHT +
-      minuteToPixel(minute) -
+      half * dayHeight(pixelsPerHour) +
+      minuteToPixel(minute, pixelsPerHour) -
       (element ? element.clientHeight / 3 : 0);
-  }, []);
+  }, [pixelsPerHour]);
 
   return { days, visibleDate, scrollRef, onScroll, goTo };
 }

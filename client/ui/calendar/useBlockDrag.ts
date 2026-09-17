@@ -104,7 +104,7 @@ function originOf(occurrence: ResolvedOccurrence): Position {
   };
 }
 
-export function useBlockDrag(occurrence: ResolvedOccurrence, onTap: () => void) {
+export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: number, onTap: () => void) {
   const [offsetMinutes, setOffsetMinutes] = useState(0);
   const [extraMinutes, setExtraMinutes] = useState(0);
   const gesture = useRef<Gesture | null>(null);
@@ -143,7 +143,7 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, onTap: () => void) 
     const current = gesture.current;
     if (!current || event.pointerId !== current.pointerId) return;
 
-    const deltaMinutes = pixelToMinute(event.clientY - current.startY);
+    const deltaMinutes = pixelToMinute(event.clientY - current.startY, pixelsPerHour);
     const next = nextPosition(current.mode, current.origin, deltaMinutes);
     current.current = next;
     if (Math.abs(event.clientY - current.startY) > TAP_SLOP_PIXELS) {

@@ -16,7 +16,7 @@ type Props = {
 export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
   const state = useAppState();
   const today = toDateKey(state.now);
-  const { days, visibleDate, scrollRef, onScroll, goTo } = useInfiniteDays(today);
+  const { days, visibleDate, scrollRef, onScroll, goTo } = useInfiniteDays(today, state.pixelsPerHour);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Layout effect, not effect: positioning after the first paint shows the top of
@@ -57,6 +57,7 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
           <DaySection
             key={date}
             date={date}
+            pixelsPerHour={state.pixelsPerHour}
             now={state.now}
             onBackgroundTap={onCreateBlock}
             onOccurrenceTap={(occurrence) =>

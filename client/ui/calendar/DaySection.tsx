@@ -1,4 +1,4 @@
-import { clampMinute, DAY_HEIGHT, floorToQuarterHour, minuteToPixel, pixelToMinute } from '../../domain/geometry';
+import { clampMinute, dayHeight, floorToQuarterHour, minuteToPixel, pixelToMinute } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
 import { toDateKey } from '../../domain/dates';
 import { formatDayGutterHeading, formatHourLabel } from '../format';
@@ -10,6 +10,7 @@ const HOURS = Array.from({ length: 23 }, (_, index) => index + 1);
 
 type Props = {
   date: string;
+  pixelsPerHour: number;
   occurrences: ResolvedOccurrence[];
   now: Date;
   onBackgroundTap: (date: string, minute: number) => void;
@@ -19,6 +20,7 @@ type Props = {
 
 export function DaySection({
   date,
+  pixelsPerHour,
   occurrences,
   now,
   onBackgroundTap,
@@ -31,11 +33,11 @@ export function DaySection({
   return (
     <section
       className="day"
-      style={{ height: DAY_HEIGHT }}
+      style={{ height: dayHeight(pixelsPerHour) }}
       data-date={date}
       onClick={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
-        const minute = pixelToMinute(event.clientY - bounds.top);
+        const minute = pixelToMinute(event.clientY - bounds.top, pixelsPerHour);
         // Flooring keeps the new block from starting above the finger.
         onBackgroundTap(date, clampMinute(floorToQuarterHour(minute)));
       }}
@@ -50,7 +52,7 @@ export function DaySection({
       </div>
 
       {HOURS.map((hour) => (
-        <div key={hour} className="hour-line" style={{ top: minuteToPixel(hour * 60) }}>
+        <div key={hour} className="hour-line" style={{ top: minuteToPixel(hour * 60, pixelsPerHour) }}>
           <span className="hour-line__label">{formatHourLabel(hour)}</span>
         </div>
       ))}
@@ -60,12 +62,13 @@ export function DaySection({
           key={occurrence.planId}
           occurrence={occurrence}
           isToday={isToday}
+          pixelsPerHour={pixelsPerHour}
           onTap={onOccurrenceTap}
           onToggleTimer={onToggleTimer}
         />
       ))}
 
-      {isToday && <NowLine now={now} date={date} />}
+      {isToday && <NowLine now={now} date={date} pixelsPerHour={pixelsPerHour} />}
     </section>
   );
 }

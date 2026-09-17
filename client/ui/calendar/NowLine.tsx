@@ -4,13 +4,14 @@ import { minuteToPixel } from '../../domain/geometry';
 type Props = {
   now: Date;
   date: string;
+  pixelsPerHour: number;
 };
 
-export function NowLine({ now, date }: Props) {
+export function NowLine({ now, date, pixelsPerHour }: Props) {
   return (
     <div
       className="now-line"
-      style={{ top: minuteToPixel(minutesSinceMidnight(now, date)) }}
+      style={{ top: minuteToPixel(minutesSinceMidnight(now, date), pixelsPerHour) }}
       aria-hidden
     />
   );

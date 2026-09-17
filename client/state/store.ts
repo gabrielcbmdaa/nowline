@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { DEFAULT_PIXELS_PER_HOUR } from '../domain/geometry';
 import { toDateKey } from '../domain/dates';
 import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
@@ -18,6 +19,12 @@ export type AppState = {
   /** The day currently on screen; the add button creates blocks here. */
   visibleDate: string;
   /**
+   * The hour scale of the calendar, in pixels per hour. UI state, like `tab`:
+   * it is read on every render of every day section, so it lives here and not
+   * behind a function that would recompute it.
+   */
+  pixelsPerHour: number;
+  /**
    * Which of the three things the app is showing. Not derived on the fly: the
    * middle one costs a request to work out, and a component that recomputed it
    * on every render would ask the server on every render.
@@ -35,6 +42,7 @@ let state: AppState = {
   overrides: [],
   now: new Date(),
   visibleDate: toDateKey(new Date()),
+  pixelsPerHour: DEFAULT_PIXELS_PER_HOUR,
   entry: 'deciding',
   firstSync: null,
 };
