@@ -57,7 +57,7 @@ describe('SignInScreen', () => {
     const onSignedIn = vi.fn();
     render(<SignInScreen onSignedIn={onSignedIn} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(() => expect(onSignedIn).toHaveBeenCalled());
@@ -75,7 +75,7 @@ describe('SignInScreen', () => {
     await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(async () => expect((await repository.readSyncState()).token).toBe('a-real-token'));
@@ -92,19 +92,19 @@ describe('SignInScreen', () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'wrong');
     clickButton('Sign in');
     await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
 
-    expect(screen.getByRole('alert').textContent).toMatch(/username or password/i);
-    // Clearing the form on a wrong password means typing the username again for
+    expect(screen.getByRole('alert').textContent).toMatch(/email or password/i);
+    // Clearing the form on a wrong password means typing the email again for
     // nothing, on a phone.
-    const usernameInput = screen.getByLabelText('Username');
-    if (!(usernameInput instanceof HTMLInputElement)) {
-      throw new Error('expected a username input');
+    const emailInput = screen.getByLabelText('Email');
+    if (!(emailInput instanceof HTMLInputElement)) {
+      throw new Error('expected an email input');
     }
-    expect(usernameInput.value).toBe('gabriel');
+    expect(emailInput.value).toBe('gabriel@example.com');
     const passwordInput = screen.getByLabelText('Password');
     if (!(passwordInput instanceof HTMLInputElement)) {
       throw new Error('expected a password input');
@@ -116,7 +116,7 @@ describe('SignInScreen', () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'refused', status: 429, detail: null });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'the-right-one');
     clickButton('Sign in');
     await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
@@ -130,7 +130,7 @@ describe('SignInScreen', () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ failed: true, kind: 'offline', status: null, detail: null });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
@@ -143,7 +143,7 @@ describe('SignInScreen', () => {
     const login = vi.spyOn(apiClient, 'login').mockReturnValue(new Promise((resolve) => { release = resolve; }));
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
 
@@ -165,7 +165,7 @@ describe('SignInScreen', () => {
     vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(async () => expect((await repository.readSyncState()).token).toBe('a-real-token'));
@@ -183,7 +183,7 @@ describe('SignInScreen', () => {
     const onSignedIn = vi.fn();
     render(<SignInScreen onSignedIn={onSignedIn} />);
 
-    typeInto('Username', 'someone-else');
+    typeInto('Email', 'someone@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(() => expect(screen.getByText(/another account/i)).toBeTruthy());
@@ -204,7 +204,7 @@ describe('SignInScreen', () => {
     const onSignedIn = vi.fn();
     render(<SignInScreen onSignedIn={onSignedIn} />);
 
-    typeInto('Username', 'someone-else');
+    typeInto('Email', 'someone@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await act(async () => {
@@ -231,7 +231,7 @@ describe('SignInScreen', () => {
     await repository.savePlan({ ...plan, id: 'theirs' });
     render(<SignInScreen onSignedIn={vi.fn()} />);
 
-    typeInto('Username', 'someone-else');
+    typeInto('Email', 'someone@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeTruthy());
@@ -239,7 +239,7 @@ describe('SignInScreen', () => {
 
     // A session nobody adopted should not stay alive on the server.
     expect(logout).toHaveBeenCalledWith('a-real-token');
-    expect(screen.getByLabelText('Username')).toBeTruthy();
+    expect(screen.getByLabelText('Email')).toBeTruthy();
     expect(await repository.readSyncState()).toEqual({ token: null, userId: 'u1', cursor: 'T1', joined: true });
   });
 
@@ -249,7 +249,7 @@ describe('SignInScreen', () => {
     const onSignedIn = vi.fn();
     render(<SignInScreen onSignedIn={onSignedIn} />);
 
-    typeInto('Username', 'gabriel');
+    typeInto('Email', 'gabriel@example.com');
     typeInto('Password', 'a-long-enough-password');
     clickButton('Sign in');
     await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
@@ -257,5 +257,24 @@ describe('SignInScreen', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/could not be prepared/i);
     expect(reported).toHaveBeenCalledWith('Preparing this device for the session failed', expect.any(Error));
     expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it('signs in with the email that was typed', async () => {
+    const login = vi.spyOn(apiClient, 'login').mockResolvedValue({ token: 'a-real-token', userId: 'u1' });
+    render(<SignInScreen onSignedIn={vi.fn()} />);
+
+    typeInto('Email', 'gabriel@example.com');
+    typeInto('Password', 'a-long-enough-password');
+    clickButton('Sign in');
+
+    await vi.waitFor(() => expect(login).toHaveBeenCalledWith('gabriel@example.com', 'a-long-enough-password'));
+  });
+
+  it('leaves the address to the server, not to the browser', () => {
+    render(<SignInScreen onSignedIn={vi.fn()} />);
+
+    const form = screen.getByRole('form', { name: 'Sign in' });
+    if (!(form instanceof HTMLFormElement)) throw new Error('expected a form');
+    expect(form.noValidate).toBe(true);
   });
 });

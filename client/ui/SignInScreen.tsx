@@ -6,7 +6,7 @@ import { useSessionHandoff } from './useSessionHandoff';
 type Props = { onSignedIn: () => void };
 
 export function SignInScreen({ onSignedIn }: Props): JSX.Element {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -20,9 +20,9 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
     setError(null);
 
     try {
-      const result = await login(username, password);
+      const result = await login(email, password);
       if (isFailure(result)) {
-        setError(failureMessage(result, 'The username or password is wrong.'));
+        setError(failureMessage(result, 'The email or password is wrong.'));
         return;
       }
 
@@ -37,16 +37,17 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
   return (
     <div className="gate">
       <h1 className="sheet__title">Sign in</h1>
-      <form aria-label="Sign in" onSubmit={(event) => { void handleSubmit(event); }}>
-        <label className="field" htmlFor="sign-in-username">
-          <span className="field__label">Username</span>
+      <form aria-label="Sign in" noValidate onSubmit={(event) => { void handleSubmit(event); }}>
+        <label className="field" htmlFor="sign-in-email">
+          <span className="field__label">Email</span>
           <input
-            id="sign-in-username"
+            id="sign-in-email"
             className="field__input"
-            value={username}
-            autoComplete="username"
+            type="email"
+            value={email}
+            autoComplete="email"
             onChange={(event) => {
-              setUsername(event.target.value);
+              setEmail(event.target.value);
             }}
           />
         </label>
