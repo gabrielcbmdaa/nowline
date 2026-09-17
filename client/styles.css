@@ -82,6 +82,10 @@ body {
   min-width: 0;
 }
 
+.field__with-action .button {
+  flex: 0 0 auto;
+}
+
 .gate__note {
   margin: 0;
   color: var(--text-dim);
@@ -93,14 +97,6 @@ body {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-/* A text button: an action that is not the point of the screen. */
-.button--link {
-  border: none;
-  background: none;
-  padding: 8px 0;
-  color: var(--accent);
 }
 
 .tabs {
@@ -483,6 +479,14 @@ body {
   padding: 6px 12px;
   font-size: 13px;
   border-radius: 10px;
+}
+
+/* A text button: an action that is not the point of the screen. */
+.button--link {
+  border: none;
+  background: none;
+  padding: 8px 0;
+  color: var(--accent);
 }
 
 .month__header {

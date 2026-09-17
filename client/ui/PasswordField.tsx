@@ -33,7 +33,7 @@ export function PasswordField({ id, label, value, autoComplete, onChange }: Prop
           }}
         />
         <button
-          className="button button--small"
+          className="button"
           type="button"
           onClick={() => {
             setShown((current) => !current);
