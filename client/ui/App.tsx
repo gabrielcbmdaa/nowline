@@ -5,14 +5,16 @@ import type { Project } from '../domain/types';
 import { reportError } from '../reportError';
 import {
   decideEntry,
+  finishLink,
   loadAll,
   setTab,
   startClock,
   startSyncing,
   useAppState,
 } from '../state/store';
+import { AuthGate } from './AuthGate';
 import { FirstSyncScreen } from './FirstSyncScreen';
-import { SignInScreen } from './SignInScreen';
+import { LinkScreen } from './LinkScreen';
 import { Fab } from './Fab';
 import { TabBar } from './TabBar';
 import { CalendarScreen } from './calendar/CalendarScreen';
@@ -64,6 +66,13 @@ export function App() {
     });
   }
 
+  function onLinkDone() {
+    void finishLink().catch((error: unknown) => {
+      reportError('Loading the app failed', error);
+      setLoadError(true);
+    });
+  }
+
   useEffect(() => {
     load();
     // Two things that outlive a render and have to be stopped together: the
@@ -98,8 +107,15 @@ export function App() {
     return <div className="app app--loading">Loading…</div>;
   }
 
+  if (state.entry === 'following-link') {
+    if (state.link === null) {
+      throw new Error('following-link without a link');
+    }
+    return <LinkScreen link={state.link} onDone={onLinkDone} />;
+  }
+
   if (state.entry === 'signed-out') {
-    return <SignInScreen onSignedIn={onSignedIn} />;
+    return <AuthGate onSignedIn={onSignedIn} />;
   }
 
   if (state.entry === 'asking-first-sync') {

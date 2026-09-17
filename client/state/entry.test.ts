@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 vi.mock('../storage/sync', () => ({
@@ -10,7 +10,7 @@ vi.mock('../storage/sync', () => ({
 
 import { inspectFirstSync, settleFirstSync } from '../storage/sync';
 import { repository } from '../storage/repository';
-import { decideEntry, getState, loadAll } from './store';
+import { decideEntry, finishLink, getState, loadAll } from './store';
 
 const look = inspectFirstSync as Mock;
 const settle = settleFirstSync as Mock;
@@ -142,5 +142,107 @@ describe('deciding what the app shows', () => {
     // its next round downloads nothing new.
     expect(getState().entry).toBe('ready');
     expect(getState().projects.map((project) => project.id)).toContain('from-the-cloud');
+  });
+});
+
+const LINK_TOKEN = 'cd'.repeat(32);
+
+describe('following an emailed link', () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    look.mockReset();
+    settle.mockReset();
+    await loadAll();
+  });
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('shows the link before anything else on a signed-out device', async () => {
+    window.history.replaceState(null, '', `/#reset=${LINK_TOKEN}`);
+
+    await decideEntry();
+
+    // Forgot-password links are opened by people who are, by definition, not
+    // signed in: the sign-in form must not win.
+    expect(getState().entry).toBe('following-link');
+    expect(getState().link).toEqual({ kind: 'reset', token: LINK_TOKEN });
+    expect(window.location.hash).toBe('');
+
+    await finishLink();
+
+    expect(getState().link).toBeNull();
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('puts a link ahead of a working session, and keeps it until it is finished', async () => {
+    await repository.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    look.mockResolvedValue({ kind: 'already-joined' });
+    window.history.replaceState(null, '', `/#confirm=${LINK_TOKEN}`);
+
+    await decideEntry();
+
+    // A confirmation opened on a phone that is already signed in still needs
+    // its button; the calendar would swallow it.
+    expect(getState().entry).toBe('following-link');
+    expect(look).not.toHaveBeenCalled();
+
+    // The address bar is clean now. Deciding again must not lose the link.
+    await decideEntry();
+    expect(getState().entry).toBe('following-link');
+    expect(getState().link).toEqual({ kind: 'confirm', token: LINK_TOKEN });
+
+    await finishLink();
+
+    expect(getState().link).toBeNull();
+    expect(getState().entry).toBe('ready');
+    expect(look).toHaveBeenCalledTimes(1);
+  });
+
+  it('decides as usual when the link in the address was malformed', async () => {
+    window.history.replaceState(null, '', `/#confirm=${LINK_TOKEN.slice(2)}`);
+
+    await decideEntry();
+
+    expect(getState().entry).toBe('signed-out');
+    expect(getState().link).toBeNull();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('shows the rows as they are once the link is finished', async () => {
+    window.history.replaceState(null, '', `/#reset=${LINK_TOKEN}`);
+    await decideEntry();
+    // Following a reset can change this device's rows: a session for another
+    // account empties them (design §4). Stand in with one row written meanwhile.
+    await repository.saveProject({
+      id: 'written-while-following',
+      name: 'Work',
+      color: '#000000',
+      createdAt: '2026-09-16T10:00:00Z',
+      updatedAt: '2026-09-16T10:00:00Z',
+      deletedAt: null,
+    });
+
+    await finishLink();
+
+    expect(getState().projects.map((project) => project.id)).toContain('written-while-following');
+  });
+
+  it('shows loading from the first moment a link is finished, never a link screen with no link', async () => {
+    window.history.replaceState(null, '', `/#reset=${LINK_TOKEN}`);
+    await decideEntry();
+    expect(getState().entry).toBe('following-link');
+
+    const finished = finishLink();
+
+    // The first patch is synchronous. `App` renders whatever it holds while
+    // `loadAll` is awaited, and `following-link` with `link: null` is the one
+    // combination its link branch refuses.
+    expect(getState().entry).toBe('deciding');
+    expect(getState().link).toBeNull();
+
+    await finished;
+    expect(getState().entry).toBe('signed-out');
   });
 });

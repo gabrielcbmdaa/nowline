@@ -4,8 +4,8 @@ A time tracker shaped like a calendar. You plan a block, press play when you act
 start, and press stop when you actually finish — the block moves to the real time and
 shrinks to what really happened. The name is the red line that crosses the current hour.
 
-Mobile first, running on the web for now. Local first on this device, with one account
-kept in sync on the server.
+Mobile first, running on the web for now. Local first on this device, with an account
+kept in sync on the server — anyone can create one with an email address.
 
 ## Running it
 
@@ -75,9 +75,12 @@ location /api/auth/ {
 ## How it works
 
 Everything is local first: the calendar reads and writes on this device, and a
-round trip to the server only agrees the two copies. One account holds the rows;
-a device signs in once, and if both sides already have data it asks once what to
-do with the two copies.
+round trip to the server only agrees the two copies. Each account holds its own
+rows. You create one with an email and a password, and confirm the address from
+the link emailed to you; a forgotten password is recovered by a link that only a
+confirmed address receives, and opening a link spends nothing until you press its
+button. A device signs in once, and if both sides already have data it asks once
+what to do with the two copies.
 
 Three tabs: **Calendar**, **Summary**, **Projects**.
 

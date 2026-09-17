@@ -11,7 +11,7 @@ vi.mock('../storage/sync', () => ({
 import { inspectFirstSync, syncOnce } from '../storage/sync';
 import { repository } from '../storage/repository';
 import type { BlockOverride } from '../domain/types';
-import { decideEntry, getState, loadAll, savePlan, startSyncing, syncNow } from './store';
+import { decideEntry, finishLink, getState, loadAll, savePlan, startSyncing, syncNow } from './store';
 
 const look = inspectFirstSync as Mock;
 
@@ -267,6 +267,24 @@ describe('the four moments a round happens', () => {
     await syncNow();
 
     expect(getState().entry).toBe('deciding');
+  });
+
+  it('does not send the owner to sign in while a link is being followed', async () => {
+    await repository.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    window.history.replaceState(null, '', `/#reset=${'ab'.repeat(32)}`);
+    await decideEntry();
+    expect(getState().entry).toBe('following-link');
+
+    // The reset this link is for revokes the old token; the round that left
+    // with it comes back 401. The person still needs the button.
+    round.mockResolvedValue({ kind: 'unauthorized' });
+    await syncNow();
+
+    expect(getState().entry).toBe('following-link');
+    expect(getState().link).toEqual({ kind: 'reset', token: 'ab'.repeat(32) });
+    look.mockResolvedValue({ kind: 'already-joined' });
+    await finishLink();
+    window.history.replaceState(null, '', '/');
   });
 
   it('does not run a round when the tab is being hidden', async () => {

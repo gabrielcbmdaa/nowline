@@ -4,6 +4,7 @@ import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import { repository } from '../storage/repository';
 import { inspectFirstSync, settleFirstSync, syncOnce } from '../storage/sync';
+import { takeEmailLink, type EmailLink } from './emailLink';
 
 export type TabId = 'calendar' | 'summary' | 'projects';
 
@@ -18,12 +19,14 @@ export type AppState = {
   /** The day currently on screen; the add button creates blocks here. */
   visibleDate: string;
   /**
-   * Which of the three things the app is showing. Not derived on the fly: the
-   * middle one costs a request to work out, and a component that recomputed it
-   * on every render would ask the server on every render.
+   * Which of the four things the app is showing. Not derived on the fly: the
+   * first-sync question costs a request to work out, and a component that
+   * recomputed it on every render would ask the server on every render.
    */
-  entry: 'deciding' | 'signed-out' | 'asking-first-sync' | 'ready';
+  entry: 'deciding' | 'following-link' | 'signed-out' | 'asking-first-sync' | 'ready';
   firstSync: { local: number; remote: number } | null;
+  /** The emailed link being followed, taken from the URL once; see `decideEntry`. */
+  link: EmailLink | null;
 };
 
 /** Everything fits in memory: a year of blocks is well under a megabyte. */
@@ -37,6 +40,7 @@ let state: AppState = {
   visibleDate: toDateKey(new Date()),
   entry: 'deciding',
   firstSync: null,
+  link: null,
 };
 
 const listeners = new Set<() => void>();
@@ -71,6 +75,13 @@ export async function loadAll(): Promise<void> {
 export async function decideEntry(): Promise<void> {
   setState({ entry: 'deciding', firstSync: null });
 
+  // Before anything else, the session included: a reset link is opened by
+  // someone who is signed out, and a confirmation by someone who may be signed
+  // in, and both need their button. The URL is read once — after that the
+  // address bar is clean, and the link lives here until `finishLink`.
+  const link = state.link ?? takeEmailLink(window.location, window.history);
+  if (link !== null) return setState({ entry: 'following-link', link, firstSync: null });
+
   const { token } = await repository.readSyncState();
   if (token === null) return setState({ entry: 'signed-out', firstSync: null });
 
@@ -95,6 +106,19 @@ export async function decideEntry(): Promise<void> {
   // offline / refused: nothing was decided, and pretending otherwise would let
   // the four wake-ups start syncing a device that never answered the question.
   setState({ entry: 'signed-out', firstSync: null });
+}
+
+/**
+ * The link was followed, or left. Rows are read again because following a
+ * reset can have changed them — a session for another account empties this
+ * device — and then the app decides what to show as if nothing had happened.
+ */
+export async function finishLink(): Promise<void> {
+  // Entering `deciding` here, not in `decideEntry`: `loadAll` is awaited first,
+  // and `following-link` with no link is a state the app must never show.
+  setState({ entry: 'deciding', link: null, firstSync: null });
+  await loadAll();
+  await decideEntry();
 }
 
 export function setTab(tab: TabId): void {
