@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isFailure, login, logout, sync } from './apiClient';
+import { confirmLink, isFailure, login, logout, register, requestReset, resetPassword, sync } from './apiClient';
 
 const reply = (status: number, body: unknown) =>
   vi.fn().mockResolvedValue({
@@ -266,5 +266,110 @@ describe('apiClient', () => {
     // The engine compares this field with the account it holds. A number that
     // slipped through would compare unequal to every account there is.
     expect(result).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+  });
+
+  const sentBody = (fetcher: ReturnType<typeof reply>) =>
+    JSON.parse((fetcher.mock.calls[0][1] as RequestInit).body as string) as unknown;
+
+  it('signs in by email, not by username', async () => {
+    const fetcher = reply(200, { token: 'abc', userId: 'u1' });
+    vi.stubGlobal('fetch', fetcher);
+
+    await login('ana@example.com', 'a-long-password');
+
+    // The server reads `email` since the accounts phase; a body with
+    // `username` is answered 401 however right the password is.
+    expect(sentBody(fetcher)).toEqual({ email: 'ana@example.com', password: 'a-long-password' });
+  });
+
+  it('creates an account and hands back its session, and whether the confirmation left', async () => {
+    const fetcher = reply(201, { token: 'abc', userId: 'u1', confirmationSent: true });
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await register('ana@example.com', 'a-long-password')).toEqual({
+      token: 'abc',
+      userId: 'u1',
+      confirmationSent: true,
+    });
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/register');
+    expect(sentBody(fetcher)).toEqual({ email: 'ana@example.com', password: 'a-long-password' });
+
+    // The server says so when the email could not leave; the account exists anyway.
+    vi.stubGlobal('fetch', reply(201, { token: 'abc', userId: 'u1', confirmationSent: false }));
+    expect(await register('ana@example.com', 'a-long-password')).toMatchObject({ confirmationSent: false });
+  });
+
+  it('refuses a new account that comes without its id, as login does', async () => {
+    vi.stubGlobal('fetch', reply(201, { token: 'abc', confirmationSent: true }));
+    expect(await register('ana@example.com', 'a-long-password')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 201,
+      detail: null,
+    });
+  });
+
+  it('passes a refused registration through, with its reason', async () => {
+    vi.stubGlobal('fetch', reply(409, { error: 'email taken' }));
+    expect(await register('ana@example.com', 'a-long-password')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 409,
+      detail: { error: 'email taken' },
+    });
+  });
+
+  it('asks for a reset link with the address alone, and takes an empty answer as done', async () => {
+    const fetcher = reply(200, {});
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await requestReset('ana@example.com')).toBe(true);
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/request-reset');
+    expect(sentBody(fetcher)).toEqual({ email: 'ana@example.com' });
+
+    vi.stubGlobal('fetch', reply(429, { error: 'too many attempts' }));
+    expect(await requestReset('ana@example.com')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 429,
+      detail: { error: 'too many attempts' },
+    });
+  });
+
+  it('sets a new password with the token from the link, and hands back a new session', async () => {
+    const fetcher = reply(200, { token: 'fresh', userId: 'u1' });
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await resetPassword('f'.repeat(64), 'a-new-long-password')).toEqual({ token: 'fresh', userId: 'u1' });
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/reset');
+    expect(sentBody(fetcher)).toEqual({ token: 'f'.repeat(64), password: 'a-new-long-password' });
+
+    vi.stubGlobal('fetch', reply(200, { token: 'fresh' }));
+    expect(await resetPassword('f'.repeat(64), 'a-new-long-password')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 200,
+      detail: null,
+    });
+  });
+
+  it('confirms a link, and says which kind it was', async () => {
+    const fetcher = reply(200, { confirmed: 'email' });
+    vi.stubGlobal('fetch', fetcher);
+    expect(await confirmLink('c'.repeat(64))).toEqual({ confirmed: 'email' });
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/confirm');
+    expect(sentBody(fetcher)).toEqual({ token: 'c'.repeat(64) });
+
+    vi.stubGlobal('fetch', reply(200, { confirmed: 'new-email', email: 'new@example.com' }));
+    expect(await confirmLink('c'.repeat(64))).toEqual({ confirmed: 'new-email', email: 'new@example.com' });
+  });
+
+  it('refuses a confirmation it does not recognise', async () => {
+    // A new address without the address is not an answer the screen can show.
+    vi.stubGlobal('fetch', reply(200, { confirmed: 'new-email' }));
+    expect(await confirmLink('c'.repeat(64))).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+
+    vi.stubGlobal('fetch', reply(200, { confirmed: 'something' }));
+    expect(await confirmLink('c'.repeat(64))).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
   });
 });
