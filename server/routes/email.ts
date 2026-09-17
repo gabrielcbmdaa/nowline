@@ -76,7 +76,7 @@ export function emailRoute(db: Db, options: AppOptions): Router {
     }
     // Every other link went to an address that is no longer this account's.
     await collections(db).emailLinks.deleteMany({ userId: link.userId });
-    response.json({ confirmed: 'new-email' });
+    response.json({ confirmed: 'new-email', email: link.email });
 
     // After the reply, and only to an address someone had proved they read:
     // a notice never goes to a typo or to a stranger.

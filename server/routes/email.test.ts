@@ -147,7 +147,9 @@ describe('change-email', () => {
       const reply = await post('/api/auth/confirm', { token: confirmTokenIn(sent[0].text) });
 
       expect(reply.status).toBe(200);
-      expect(reply.body).toEqual({ confirmed: 'new-email' });
+      // The screen says which address the account has now; whoever opens the
+      // link received it at that address, so this tells them nothing new.
+      expect(reply.body).toEqual({ confirmed: 'new-email', email: 'new@example.com' });
       const user = await findUserById(db, ana.userId);
       expect(user?.email).toBe('new@example.com');
       expect(user!.verifiedAt!.getTime()).toBeGreaterThan(hoursAgo(1).getTime());
