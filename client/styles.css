@@ -71,6 +71,17 @@ body {
   flex: 1 1 100%;
 }
 
+.field__with-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field__with-action .field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .tabs {
   display: flex;
   flex: 0 0 auto;
