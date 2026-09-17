@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { DEFAULT_PIXELS_PER_HOUR } from '../domain/geometry';
+import { clampScale, DEFAULT_PIXELS_PER_HOUR } from '../domain/geometry';
 import { toDateKey } from '../domain/dates';
 import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
@@ -107,6 +107,14 @@ export async function decideEntry(): Promise<void> {
 
 export function setTab(tab: TabId): void {
   setState({ tab });
+}
+
+/**
+ * The scale is clamped here and not at the call sites, so no input — keyboard,
+ * wheel or fingers — can put a value outside the range into the state.
+ */
+export function setZoom(pixelsPerHour: number): void {
+  setState({ pixelsPerHour: clampScale(pixelsPerHour) });
 }
 
 export function setVisibleDate(visibleDate: string): void {

@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { addDays } from '../../domain/dates';
-import { dayHeight, minuteToPixel } from '../../domain/geometry';
-import { setVisibleDate as publishVisibleDate } from '../../state/store';
+import { clampScale, dayHeight, minuteToPixel } from '../../domain/geometry';
+import { documentMinuteAt, scrollTopForScale } from '../../domain/zoom';
+import { setVisibleDate as publishVisibleDate, setZoom } from '../../state/store';
 
 /** Days kept mounted at once; 365 would be half a million pixels tall. */
 export const WINDOW_DAYS = 7;
@@ -106,5 +107,23 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
       (element ? element.clientHeight / 3 : 0);
   }, [pixelsPerHour]);
 
-  return { days, visibleDate, scrollRef, onScroll, goTo };
+  /**
+   * Change the scale and move scrollTop so the instant at `focalOffset` pixels
+   * down the viewport stays there. `null` means the gesture has no focal point
+   * — a key, a button — and then the focal point is the middle of the screen.
+   */
+  const zoomTo = useCallback((requested: number, focalOffset: number | null) => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const current = pixelsPerHourRef.current;
+    const next = clampScale(requested);
+    if (next === current) return;
+    const offset = focalOffset ?? element.clientHeight / 2;
+    const documentMinute = documentMinuteAt(element.scrollTop, offset, current);
+    setZoom(next);
+    // Applied by the layout effect, which now also runs when the scale changes.
+    absoluteTarget.current = Math.max(0, scrollTopForScale(documentMinute, next, offset));
+  }, []);
+
+  return { days, visibleDate, scrollRef, onScroll, goTo, zoomTo };
 }
