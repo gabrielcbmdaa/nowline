@@ -338,6 +338,19 @@ body {
    * page instead — iOS Safari ignores user-scalable=no on purpose.
    */
   touch-action: pan-y;
+  /*
+   * Hidden, and only here. The strip is not a document: it is a sliding window
+   * of seven days, so the thumb says "43% through" of something that does not
+   * exist — keep scrolling and it returns to the middle while the dates go on.
+   * It misinforms by construction, and the zoom makes it worse: at 140px/hour
+   * the strip is 23520px and the thumb is a sliver. What the calendar has
+   * instead is true: the visible date in the bar, the hour in the gutter, the
+   * day on the separator. Visual only — overflow-y stays auto, so finger, wheel
+   * and keyboard all still scroll. `overflow: hidden` here would break that.
+   * .sheet and .summary keep theirs: those have a real end, and there the
+   * thumb tells the truth.
+   */
+  scrollbar-width: none;
   position: relative;
   /*
    * Browsers with scroll anchoring shift scrollTop themselves when content is
@@ -346,6 +359,11 @@ body {
    * running, every prepended day moves the strip twice.
    */
   overflow-anchor: none;
+}
+
+/* The same, for the engines that predate scrollbar-width. */
+.calendar__scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .day {
