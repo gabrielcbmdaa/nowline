@@ -25,6 +25,14 @@ export type AppState = {
    */
   pixelsPerHour: number;
   /**
+   * Bumped the instant a second pointer joins the calendar. A block with a drag
+   * in progress watches this and gives the gesture up: the pinch owns it, and a
+   * drag that survived would read its pixel delta at a scale that did not
+   * measure it. Events bubble, so the container cannot tell the block any other
+   * way, and this project has no React context.
+   */
+  gestureAbort: number;
+  /**
    * Which of the three things the app is showing. Not derived on the fly: the
    * middle one costs a request to work out, and a component that recomputed it
    * on every render would ask the server on every render.
@@ -43,6 +51,7 @@ let state: AppState = {
   now: new Date(),
   visibleDate: toDateKey(new Date()),
   pixelsPerHour: DEFAULT_PIXELS_PER_HOUR,
+  gestureAbort: 0,
   entry: 'deciding',
   firstSync: null,
 };
@@ -115,6 +124,10 @@ export function setTab(tab: TabId): void {
  */
 export function setZoom(pixelsPerHour: number): void {
   setState({ pixelsPerHour: clampScale(pixelsPerHour) });
+}
+
+export function abortGestures(): void {
+  setState({ gestureAbort: state.gestureAbort + 1 });
 }
 
 export function setVisibleDate(visibleDate: string): void {

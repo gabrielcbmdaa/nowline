@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent as Re
 import { addDays } from '../../domain/dates';
 import { clampScale, dayHeight, minuteToPixel } from '../../domain/geometry';
 import { applyPinch, documentMinuteAt, scrollTopForScale, type PinchAnchor } from '../../domain/zoom';
-import { setVisibleDate as publishVisibleDate, setZoom } from '../../state/store';
+import { abortGestures, setVisibleDate as publishVisibleDate, setZoom } from '../../state/store';
 
 function spanOf(pointers: Map<number, number>): number {
   const [first, second] = [...pointers.values()];
@@ -148,10 +148,14 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
     absoluteTarget.current = Math.max(0, scrollTopForScale(documentMinute, next, offset));
   }, []);
 
+  // Bound in the capture phase on .calendar__scroll — see CalendarScreen.tsx.
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const pointers = pinchPointers.current;
     pointers.set(event.pointerId, event.clientY);
     if (pointers.size !== 2) return;
+    // Before the first frame of the pinch: no drag may outlive the scale that
+    // measured its pixels.
+    abortGestures();
     zooming.current = true;
     pinchAnchor.current = {
       pixelsPerHour: pixelsPerHourRef.current,

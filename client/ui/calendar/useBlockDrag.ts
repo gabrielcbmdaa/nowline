@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { minutesSinceMidnight, wallClockMinutesBetween } from '../../domain/dates';
 import { reportError } from '../../reportError';
 import {
@@ -8,7 +8,7 @@ import {
   snapToQuarterHour,
 } from '../../domain/geometry';
 import type { ResolvedOccurrence } from '../../domain/types';
-import { getState, newId, saveOverride } from '../../state/store';
+import { getState, newId, saveOverride, useAppState } from '../../state/store';
 
 export type DragMode = 'move' | 'start' | 'end';
 
@@ -109,6 +109,8 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
   const [extraMinutes, setExtraMinutes] = useState(0);
   const gesture = useRef<Gesture | null>(null);
   const tapCandidate = useRef<number | null>(null);
+  const { gestureAbort } = useAppState();
+  const seenAbort = useRef(gestureAbort);
 
   function resetPreview() {
     setOffsetMinutes(0);
@@ -190,6 +192,21 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
     gesture.current = null;
     resetPreview();
   }
+
+  /** Given up from outside: a second finger arrived and the pinch takes over. */
+  function abort() {
+    tapCandidate.current = null;
+    if (gesture.current === null) return;
+    gesture.current = null;
+    resetPreview();
+  }
+
+  useEffect(() => {
+    // Not on mount: there is nothing to give up when the block appears.
+    if (gestureAbort === seenAbort.current) return;
+    seenAbort.current = gestureAbort;
+    abort();
+  }, [gestureAbort]);
 
   async function persist(mode: DragMode, committed: Position): Promise<void> {
     const existing = getState().overrides.find(

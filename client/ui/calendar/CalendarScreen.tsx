@@ -94,14 +94,16 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
         </button>
       </header>
 
+      {/* The block's begin() stops the bubble, so the first finger would never join the
+          pinch map; capture still sees it because this node is an ancestor of the block. */}
       <div
         className="calendar__scroll"
         ref={scrollRef}
         onScroll={onScroll}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
+        onPointerDownCapture={onPointerDown}
+        onPointerMoveCapture={onPointerMove}
+        onPointerUpCapture={onPointerUp}
+        onPointerCancelCapture={onPointerCancel}
         tabIndex={0}
         onKeyDown={(event) => {
           // On the container and not on the document: Sheet's own listener only
