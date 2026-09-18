@@ -10,7 +10,7 @@ vi.mock('../reportError', () => ({
 
 import { reportError } from '../reportError';
 import { LocalStorageRepository } from './localStorageRepository';
-import { adoptSession, firstSyncDecision, inspectFirstSync, settleFirstSync, syncOnce } from './sync';
+import { adoptSession, firstSyncDecision, inspectFirstSync, settleFirstSync, signOut, syncOnce } from './sync';
 
 const plan: BlockPlan = {
   id: 'p1',
@@ -962,5 +962,140 @@ describe('adoptSession', () => {
     // engine's door, it would be 1, and the question would be about a change
     // already in u1's cloud.
     expect(await adopt).toEqual({ kind: 'adopted' });
+  });
+});
+
+describe('signOut', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const today = () => '2026-09-17';
+  const signedOut = { token: null, userId: null, cursor: null, joined: false };
+
+  async function deviceWithOneUnsentChange() {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    await repo.savePlan({ ...plan, id: 'mine' });
+    return repo;
+  }
+
+  it('uploads what is owed first, then revokes the live token, then empties the device', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue(emptyReply('T2'));
+    const revoke = vi.fn().mockResolvedValue(true);
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'signed-out' });
+
+    // The round carried the change up; nothing was at risk, so no copy was kept.
+    expect(send.mock.calls[0][2].plans.map((row: { id: string }) => row.id)).toEqual(['mine']);
+    expect(revoke).toHaveBeenCalledWith('abc');
+    expect(await repo.readSyncState()).toEqual(signedOut);
+    expect(await repo.listPlans()).toEqual([]);
+    expect(localStorage.getItem('nowline.discarded.2026-09-17')).toBeNull();
+  });
+
+  it('changes nothing when there is no network', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null, detail: null });
+    const revoke = vi.fn();
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'offline' });
+
+    // Signing out reaches the server, like an upload does. Until it can, the
+    // device stays signed in with its change still owed.
+    expect(revoke).not.toHaveBeenCalled();
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    expect((await repo.listPending()).plans).toEqual(['mine']);
+  });
+
+  it('answers refused when the round is refused, and writes nothing', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'refused', status: 500, detail: null });
+    const revoke = vi.fn();
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'refused', status: 500 });
+
+    expect(revoke).not.toHaveBeenCalled();
+    expect(await repo.readSyncState()).toEqual({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    expect((await repo.listPending()).plans).toEqual(['mine']);
+  });
+
+  it('asks before removing what the server did not take, and writes nothing', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue({ ...emptyReply('T2'), rejected: ['mine'] });
+    const revoke = vi.fn();
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'at-risk', atRisk: 1 });
+
+    expect(revoke).not.toHaveBeenCalled();
+    expect((await repo.listPending()).plans).toEqual(['mine']);
+    expect((await repo.readSyncState()).token).toBe('abc');
+  });
+
+  it('keeps a copy when the owner discards what was at risk', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue({ ...emptyReply('T2'), rejected: ['mine'] });
+    const revoke = vi.fn().mockResolvedValue(true);
+
+    expect(await signOut('discard', { send, revoke, repo, today })).toEqual({ kind: 'signed-out' });
+
+    expect(revoke).toHaveBeenCalledWith('abc');
+    expect(await repo.readSyncState()).toEqual(signedOut);
+    expect(await repo.listPlans()).toEqual([]);
+    expect(localStorage.getItem('nowline.discarded.2026-09-17')).not.toBeNull();
+  });
+
+  it('skips the revoke when the round found the token already dead', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+    const revoke = vi.fn();
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'signed-out' });
+
+    // There is no session left to forget; asking the server would only 401 again.
+    expect(revoke).not.toHaveBeenCalled();
+    expect(await repo.readSyncState()).toEqual(signedOut);
+  });
+
+  it('stays signed in when the server could not be asked to forget the session', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue(emptyReply('T2'));
+    const revoke = vi.fn().mockResolvedValue({ failed: true, kind: 'offline', status: null, detail: null });
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'offline' });
+
+    // The revoke comes before the reset on purpose: a device emptied while the
+    // server still honours its token is a session nobody can end.
+    expect((await repo.readSyncState()).token).toBe('abc');
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+  });
+
+  it('stays signed in when the server refused to forget the session', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue(emptyReply('T2'));
+    const revoke = vi.fn().mockResolvedValue({ failed: true, kind: 'refused', status: 500, detail: null });
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'refused', status: 500 });
+
+    expect((await repo.readSyncState()).token).toBe('abc');
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+  });
+
+  it('counts every row on a device that never joined', async () => {
+    const repo = new LocalStorageRepository();
+    await repo.writeSyncState({ token: 'abc', userId: 'u1', cursor: null, joined: false });
+    await repo.savePlan({ ...plan, id: 'p1' });
+    await repo.savePlan({ ...plan, id: 'p2' });
+    const send = vi.fn();
+    const revoke = vi.fn();
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'at-risk', atRisk: 2 });
+
+    // No round runs before the first-sync question is answered, so nothing here
+    // has ever reached a cloud.
+    expect(send).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
   });
 });

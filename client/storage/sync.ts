@@ -8,7 +8,8 @@ import { reportError, reportWarning } from '../reportError';
 /**
  * Nothing in this module runs while something else in it is running.
  *
- * There are four ways in — a round, a look, a settle, and adopting a session —
+ * There are five ways in — a round, a look, a settle, adopting a session, and
+ * signing out —
  * and they all read and write the same things: this device's queue, its cursor,
  * and whose rows it holds. Two of them overlapping is how a cursor written by
  * one gets replaced by an older one from the other, how a first sync that
@@ -359,6 +360,62 @@ async function runAdoptSession(
   await resetDevice(repo, today(), atRisk > 0);
   await repo.writeSyncState(fresh);
   return { kind: 'adopted' };
+}
+
+export type SignOutOutcome =
+  | { kind: 'signed-out' }
+  | { kind: 'at-risk'; atRisk: number }
+  | { kind: 'offline' }
+  | { kind: 'refused'; status: number | null };
+
+/**
+ * Leaves the account on this device without losing what it has not uploaded.
+ * Upload, count what would be lost and ask, revoke, and only then empty. The
+ * revoke comes before the reset: if the reset then throws, the device holds a
+ * dead token and its next round shows "Sign in", which is the safe direction.
+ */
+export function signOut(
+  answer: 'discard' | null,
+  deps: { send?: typeof apiClient.sync; revoke?: typeof apiClient.logout; repo?: BlockRepository; today?: () => string } = {},
+): Promise<SignOutOutcome> {
+  return oneAtATime(() => runSignOut(answer, deps));
+}
+
+async function runSignOut(
+  answer: 'discard' | null,
+  deps: { send?: typeof apiClient.sync; revoke?: typeof apiClient.logout; repo?: BlockRepository; today?: () => string },
+): Promise<SignOutOutcome> {
+  const repo = deps.repo ?? liveRepository;
+  const revoke = deps.revoke ?? apiClient.logout;
+  const today = deps.today ?? (() => new Date().toISOString().slice(0, 10));
+
+  // 1. Upload whatever is owed. Signing out reaches the server, like an upload
+  // does; a device that never joined has no round to run.
+  const round = await runSyncOnce({ send: deps.send, repo });
+  if (round.kind === 'offline') return { kind: 'offline' };
+  if (round.kind === 'refused') return { kind: 'refused', status: round.status };
+
+  // 2. What would be lost for good: the queue on a joined device, every row on
+  // one that never joined. Re-read, because the round wrote — an unauthorized
+  // round already dropped the token, which is how step 3 knows to skip.
+  const state = await repo.readSyncState();
+  const atRisk = await countAtRisk(repo, state.joined);
+  if (atRisk > 0 && answer !== 'discard') return { kind: 'at-risk', atRisk };
+
+  // 3. Ask the server to forget the session, while the token is still ours to name.
+  if (state.token !== null) {
+    const forgotten = await revoke(state.token);
+    if (isFailure(forgotten)) {
+      if (forgotten.kind === 'offline') return { kind: 'offline' };
+      if (forgotten.kind === 'refused') return { kind: 'refused', status: forgotten.status };
+      // unauthorized: the session ended between the round and this call.
+    }
+  }
+
+  // 4. Empty the device, after a copy of anything no cloud has.
+  await resetDevice(repo, today(), atRisk > 0);
+  await repo.writeSyncState({ token: null, userId: null, cursor: null, joined: false });
+  return { kind: 'signed-out' };
 }
 
 /**
