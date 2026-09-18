@@ -21,10 +21,22 @@ type Gesture = {
   origin: Position;
   current: Position;
   moved: boolean;
+  /** True when the gesture began by surviving the hold. A lift then is not a tap. */
+  fromHold: boolean;
 };
 
 /** Below this the gesture was a tap, not a drag. */
 const TAP_SLOP_PIXELS = 5;
+
+/** A touch must be held this long before a scheduled block will drag. Mouse does not wait. */
+export const LONG_PRESS_MS = 500;
+
+type Hold = {
+  pointerId: number;
+  mode: DragMode;
+  startY: number;
+  origin: Position;
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -107,7 +119,10 @@ function originOf(occurrence: ResolvedOccurrence): Position {
 export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: number, onTap: () => void) {
   const [offsetMinutes, setOffsetMinutes] = useState(0);
   const [extraMinutes, setExtraMinutes] = useState(0);
+  const [armed, setArmed] = useState(false);
   const gesture = useRef<Gesture | null>(null);
+  const hold = useRef<Hold | null>(null);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapCandidate = useRef<number | null>(null);
   const { gestureAbort } = useAppState();
   const seenAbort = useRef(gestureAbort);
@@ -115,6 +130,32 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
   function resetPreview() {
     setOffsetMinutes(0);
     setExtraMinutes(0);
+  }
+
+  function clearHold() {
+    if (armTimer.current !== null) {
+      clearTimeout(armTimer.current);
+      armTimer.current = null;
+    }
+    hold.current = null;
+    setArmed(false);
+  }
+
+  function arm() {
+    const current = hold.current;
+    hold.current = null;
+    armTimer.current = null;
+    if (current === null) return;
+    gesture.current = {
+      pointerId: current.pointerId,
+      mode: current.mode,
+      startY: current.startY,
+      origin: current.origin,
+      current: current.origin,
+      moved: false,
+      fromHold: true,
+    };
+    setArmed(true);
   }
 
   function begin(mode: DragMode, event: ReactPointerEvent<HTMLElement>) {
@@ -131,6 +172,17 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     const origin = originOf(occurrence);
+    if (event.pointerType === 'touch') {
+      clearHold();
+      hold.current = {
+        pointerId: event.pointerId,
+        mode,
+        startY: event.clientY,
+        origin,
+      };
+      armTimer.current = setTimeout(arm, LONG_PRESS_MS);
+      return;
+    }
     gesture.current = {
       pointerId: event.pointerId,
       mode,
@@ -138,10 +190,19 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
       origin,
       current: origin,
       moved: false,
+      fromHold: false,
     };
   }
 
   function move(event: ReactPointerEvent<HTMLElement>) {
+    const waiting = hold.current;
+    if (waiting !== null && event.pointerId === waiting.pointerId) {
+      if (Math.abs(event.clientY - waiting.startY) > TAP_SLOP_PIXELS) {
+        clearHold();
+      }
+      return;
+    }
+
     const current = gesture.current;
     if (!current || event.pointerId !== current.pointerId) return;
 
@@ -156,6 +217,13 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
   }
 
   function end(event: ReactPointerEvent<HTMLElement>) {
+    const waiting = hold.current;
+    if (waiting !== null && event.pointerId === waiting.pointerId) {
+      clearHold();
+      onTap();
+      return;
+    }
+
     if (tapCandidate.current === event.pointerId) {
       tapCandidate.current = null;
       onTap();
@@ -171,9 +239,11 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
     const moved = current.moved;
     gesture.current = null;
     resetPreview();
+    setArmed(false);
 
     if (!moved || samePosition(committed, origin)) {
-      onTap();
+      // A hold that armed and never left its slot was a grab, not a tap.
+      if (!current.fromHold) onTap();
       return;
     }
 
@@ -186,6 +256,7 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
       return;
     }
 
+    clearHold();
     const current = gesture.current;
     if (!current || event.pointerId !== current.pointerId) return;
 
@@ -196,6 +267,7 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
   /** Given up from outside: a second finger arrived and the pinch takes over. */
   function abort() {
     tapCandidate.current = null;
+    clearHold();
     if (gesture.current === null) return;
     gesture.current = null;
     resetPreview();
@@ -207,6 +279,16 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
     seenAbort.current = gestureAbort;
     abort();
   }, [gestureAbort]);
+
+  useEffect(() => {
+    return () => {
+      if (armTimer.current !== null) {
+        clearTimeout(armTimer.current);
+        armTimer.current = null;
+      }
+      hold.current = null;
+    };
+  }, []);
 
   async function persist(mode: DragMode, committed: Position): Promise<void> {
     const existing = getState().overrides.find(
@@ -236,6 +318,7 @@ export function useBlockDrag(occurrence: ResolvedOccurrence, pixelsPerHour: numb
   return {
     offsetMinutes,
     extraMinutes,
+    armed,
     onBodyPointerDown: (event: ReactPointerEvent<HTMLElement>) => begin('move', event),
     onHandlePointerDown:
       (edge: 'start' | 'end') => (event: ReactPointerEvent<HTMLElement>) =>

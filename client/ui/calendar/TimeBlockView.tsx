@@ -39,6 +39,12 @@ const STACKED_MIN_HEIGHT = 30;
 /** Matches the dimming the done state used to get from CSS opacity. */
 const DONE_DIM = 0.75;
 
+/**
+ * Darker than the live fill, and not the 0.75 of a done block: the signal that
+ * a touch has been held long enough for the block to follow the finger.
+ */
+export const ARMED_DIM = 0.7;
+
 type Props = {
   occurrence: ResolvedOccurrence;
   isToday: boolean;
@@ -67,7 +73,11 @@ export function TimeBlockView({ occurrence, isToday, pixelsPerHour, onTap, onTog
 
   const baseColor = occurrence.project?.color ?? NO_PROJECT_COLOR;
   const background =
-    occurrence.status === 'done' ? dimTowardPage(baseColor, DONE_DIM) : baseColor;
+    occurrence.status === 'done'
+      ? dimTowardPage(baseColor, DONE_DIM)
+      : drag.armed
+        ? dimTowardPage(baseColor, ARMED_DIM)
+        : baseColor;
 
   function onBodyPointerDown(event: ReactPointerEvent<HTMLElement>) {
     clickFromGesture.current = false;
