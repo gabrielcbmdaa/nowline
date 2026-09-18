@@ -8,11 +8,25 @@ import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor
 import { useBlockDrag } from './useBlockDrag';
 
 /**
- * A quarter hour is 16px at the current scale, so this floor is what makes short
- * blocks look longer than they are. 18 keeps the single line of text legible while
- * inflating a 15-minute block by 2px instead of 14.
+ * A floor with one job: a block stays visible. Five pixels is five minutes at
+ * the default scale, and at the smallest scale it is what keeps a five-minute
+ * block from disappearing. It is deliberately not what makes the stopwatch
+ * button big enough — that is TIMER_MIN_HEIGHT, and separating the two is what
+ * closed the 18px floor of 2026-09-05.
  */
-const MIN_BLOCK_HEIGHT = 18;
+const MIN_BLOCK_HEIGHT = 5;
+
+/** Where one line of text is still legible. The figure the old floor carried. */
+const TEXT_MIN_HEIGHT = 18;
+
+/**
+ * What is tappable of the button is min(34, this block's height), so drawing it
+ * below 24 is what used to give an 18px target where WCAG 2.2 SC 2.5.8 asks for
+ * 24. Withheld below that, the layout meets the criterion instead of a special
+ * case doing it, at every scale. A block under 24px offers no Start: the zoom
+ * is how you reach it, and the keyboard can zoom.
+ */
+const TIMER_MIN_HEIGHT = 24;
 
 /**
  * Stacked, the title and the time measure 30.5px together. At 60px/hour half an
@@ -121,15 +135,19 @@ export function TimeBlockView({ occurrence, isToday, pixelsPerHour, onTap, onTog
         onPointerCancel={onPointerCancel}
       />
 
-      {/* One line, title first: two stacked lines are what forced the old 30px floor. */}
-      <div className="block__text">
-        <span className="block__title">{occurrence.title}</span>
-        <span className="block__time">
-          {formatTime(labelStart)} - {formatTime(labelEnd)}
-        </span>
-      </div>
+      {height >= TEXT_MIN_HEIGHT && (
+        /* One line, title first: two stacked lines are what forced the old 30px floor. */
+        <div className="block__text">
+          <span className="block__title">{occurrence.title}</span>
+          <span className="block__time">
+            {formatTime(labelStart)} - {formatTime(labelEnd)}
+          </span>
+        </div>
+      )}
 
-      {occurrence.status !== 'done' && (isToday || occurrence.status === 'running') && (
+      {height >= TIMER_MIN_HEIGHT &&
+        occurrence.status !== 'done' &&
+        (isToday || occurrence.status === 'running') && (
         <button
           className="block__timer"
           aria-label={occurrence.status === 'running' ? 'Stop' : 'Start'}

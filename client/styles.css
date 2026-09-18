@@ -627,8 +627,11 @@ legend.field__label {
   min-height: 0;
 }
 
-/* 34px of thumb to hit, but only the glyph is drawn: no ring, no fill. The round
-   shape survives so the focus ring follows the target rather than boxing it. */
+/* Laid out at 34px, and never drawn in a block shorter than TIMER_MIN_HEIGHT, so
+   there are never fewer than the 24 tappable pixels WCAG 2.2 SC 2.5.8 asks for —
+   overflow on .block clips at the padding box, so what is tappable is min(34,
+   block height). Only the glyph is drawn: no ring, no fill. The round shape
+   survives so the focus ring follows the target rather than boxing it. */
 .block__timer {
   flex: 0 0 auto;
   position: relative;

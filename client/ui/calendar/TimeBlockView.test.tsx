@@ -227,3 +227,81 @@ describe('TimeBlockView accessible name includes the half of the clock', () => {
     expect(document.querySelector('.block__time')?.textContent).toBe('11:30 - 12:15');
   });
 });
+
+function shortBlock(durationMinutes: number): ResolvedOccurrence {
+  return {
+    planId: 'p1',
+    date: '2026-09-17',
+    title: 'Stretch',
+    project: null,
+    status: 'scheduled',
+    displayStart: new Date(2026, 8, 17, 10, 0),
+    displayEnd: new Date(2026, 8, 17, 10, durationMinutes),
+  };
+}
+
+function drawAt(occurrence: ResolvedOccurrence, pixelsPerHour: number) {
+  const { container } = render(
+    <TimeBlockView
+      occurrence={occurrence}
+      isToday={true}
+      pixelsPerHour={pixelsPerHour}
+      onTap={() => {}}
+      onToggleTimer={() => {}}
+    />,
+  );
+  const block = container.querySelector<HTMLElement>('.block');
+  if (!block) throw new Error('no block rendered');
+  return {
+    height: block.style.height,
+    hasText: block.querySelector('.block__text') !== null,
+    hasTimer: block.querySelector('.block__timer') !== null,
+    stacked: block.classList.contains('block--stacked'),
+  };
+}
+
+describe('what a block draws depends on how tall it is, not on the zoom', () => {
+  afterEach(cleanup);
+
+  it('keeps a five-minute block visible and says nothing else', () => {
+    // 5 minutes at 30px/hour is 2.5px; the floor holds it at 5 so it is still seen.
+    expect(drawAt(shortBlock(5), 30)).toEqual({
+      height: '5px',
+      hasText: false,
+      hasTimer: false,
+      stacked: false,
+    });
+  });
+
+  it('adds the text at 18px, where one line stays legible', () => {
+    // 18 minutes at 60px/hour is 18px.
+    expect(drawAt(shortBlock(18), 60)).toEqual({
+      height: '18px',
+      hasText: true,
+      hasTimer: false,
+      stacked: false,
+    });
+  });
+
+  it('withholds the stopwatch one pixel below the 24 WCAG 2.5.8 asks for', () => {
+    expect(drawAt(shortBlock(23), 60).hasTimer).toBe(false);
+    expect(drawAt(shortBlock(24), 60).hasTimer).toBe(true);
+  });
+
+  it('offers the stopwatch to a short block once the zoom makes room', () => {
+    // A quarter hour is 15px at 60 and 24px at 96: the same block, zoomed.
+    expect(drawAt(shortBlock(15), 60).hasTimer).toBe(false);
+    expect(drawAt(shortBlock(15), 96).hasTimer).toBe(true);
+  });
+
+  it('gives a 48-minute block its stopwatch even at the smallest scale', () => {
+    // 48 minutes at 30px/hour is 24px. A rule by zoom level would have taken
+    // the button from a block with room for it.
+    expect(drawAt(shortBlock(48), 30).hasTimer).toBe(true);
+  });
+
+  it('stacks the two lines from half an hour at the default scale', () => {
+    expect(drawAt(shortBlock(29), 60).stacked).toBe(false);
+    expect(drawAt(shortBlock(30), 60).stacked).toBe(true);
+  });
+});
