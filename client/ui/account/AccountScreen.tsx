@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX } from 'react';
 import { loadAccount, resendConfirmation, useAppState } from '../../state/store';
 import { isFailure } from '../../storage/apiClient';
 import { COULD_NOT_SEND, failureMessage } from '../failureMessage';
+import { ChangeEmailForm } from './ChangeEmailForm';
 
 /**
  * What the server knows about the account, and the three things that can be
@@ -13,6 +14,8 @@ export function AccountScreen(): JSX.Element {
   const [resent, setResent] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const [linkSentTo, setLinkSentTo] = useState<string | null>(null);
 
   async function resend(): Promise<void> {
     if (resending) return;
@@ -104,6 +107,37 @@ export function AccountScreen(): JSX.Element {
               </>
             )}
           </>
+        )}
+      </section>
+      <section className="account__row">
+        {linkSentTo !== null && (
+          <p className="account__value" role="status">
+            Check {linkSentTo} for a link. Your email changes when you open it.
+          </p>
+        )}
+        {changing ? (
+          <ChangeEmailForm
+            onSent={(to) => {
+              setLinkSentTo(to);
+              setChanging(false);
+            }}
+            onCancel={() => {
+              setChanging(false);
+            }}
+          />
+        ) : (
+          <div className="account__actions">
+            <button
+              className="button"
+              type="button"
+              onClick={() => {
+                setLinkSentTo(null);
+                setChanging(true);
+              }}
+            >
+              Change email
+            </button>
+          </div>
         )}
       </section>
     </div>

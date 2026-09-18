@@ -17,6 +17,7 @@ import {
   getState,
   loadAccount,
   loadAll,
+  changeAccountEmail,
   resendConfirmation,
   setTab,
   signOutOfDevice,
@@ -166,6 +167,43 @@ describe('the account tab', () => {
     expect(await resendConfirmation()).toBeNull();
 
     expect(send).not.toHaveBeenCalled();
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('asks to change the email with the current password, and keeps the device signed in on a 403', async () => {
+    await signedInAndReady();
+    const change = vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({
+      failed: true,
+      kind: 'refused',
+      status: 403,
+      detail: { error: 'wrong password' },
+    });
+
+    const result = await changeAccountEmail('new@example.com', 'typo');
+
+    expect(change).toHaveBeenCalledWith('abc', 'new@example.com', 'typo');
+    expect(result).toEqual({ failed: true, kind: 'refused', status: 403, detail: { error: 'wrong password' } });
+    // A typo on "Change email" must not end the session; that is what 403 is for.
+    expect(getState().entry).toBe('ready');
+  });
+
+  it('signs the device out when the change request meets a dead session', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+
+    await changeAccountEmail('new@example.com', 'the-current-password');
+
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('does not ask to change the email when the engine already dropped the token', async () => {
+    await signedInAndReady();
+    await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    const change = vi.spyOn(apiClient, 'changeEmail');
+
+    expect(await changeAccountEmail('new@example.com', 'the-current-password')).toBeNull();
+
+    expect(change).not.toHaveBeenCalled();
     expect(getState().entry).toBe('signed-out');
   });
 });

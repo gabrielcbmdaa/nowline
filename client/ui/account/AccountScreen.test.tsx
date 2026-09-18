@@ -150,4 +150,87 @@ describe('AccountScreen', () => {
     await vi.waitFor(() => expect(screen.getByText('Confirmed')).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'Resend confirmation' })).toBeNull();
   });
+
+  function typeInto(label: string, value: string): void {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  }
+
+  async function openChangeEmail(): Promise<void> {
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ userId: 'u1', email: 'ana@example.com', verifiedAt: '2026-09-17T10:00:00.000Z' });
+    render(<AccountScreen />);
+    await vi.waitFor(() => expect(screen.getByText('ana@example.com')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Change email' }));
+  }
+
+  it('asks for the new address and the current password, and says where the link went', async () => {
+    const change = vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({ sent: true });
+    await openChangeEmail();
+
+    const form = screen.getByRole('form', { name: 'Change email' });
+    if (!(form instanceof HTMLFormElement)) throw new Error('expected a form');
+    expect(form.noValidate).toBe(true);
+    typeInto('New email', 'new@example.com');
+    typeInto('Current password', 'the-current-password');
+    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }));
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        'Check new@example.com for a link. Your email changes when you open it.',
+      ),
+    );
+    expect(change).toHaveBeenCalledWith('abc', 'new@example.com', 'the-current-password');
+    // The address on the account has not changed yet; the link does that.
+    expect(screen.getByText('ana@example.com')).toBeTruthy();
+    expect(screen.queryByRole('form', { name: 'Change email' })).toBeNull();
+  });
+
+  it('says the password is wrong, keeps the form, and stays signed in', async () => {
+    vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({
+      failed: true,
+      kind: 'refused',
+      status: 403,
+      detail: { error: 'wrong password' },
+    });
+    await openChangeEmail();
+
+    typeInto('New email', 'new@example.com');
+    typeInto('Current password', 'typo');
+    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }));
+
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toBe('The password is wrong.'));
+    expect(screen.getByRole('form', { name: 'Change email' })).toBeTruthy();
+    const newEmail = screen.getByLabelText('New email');
+    if (!(newEmail instanceof HTMLInputElement)) throw new Error('expected an input');
+    expect(newEmail.value).toBe('new@example.com');
+    const currentPassword = screen.getByLabelText('Current password');
+    if (!(currentPassword instanceof HTMLInputElement)) throw new Error('expected an input');
+    expect(currentPassword.value).toBe('typo');
+    expect(getState().entry).toBe('ready');
+  });
+
+  it('says so when the link could not be sent', async () => {
+    vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({ sent: false });
+    await openChangeEmail();
+
+    typeInto('New email', 'new@example.com');
+    typeInto('Current password', 'the-current-password');
+    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }));
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('The email could not be sent. Try again in a few minutes.'),
+    );
+    expect(screen.getByRole('form', { name: 'Change email' })).toBeTruthy();
+  });
+
+  it('folds the form away on Cancel without asking the server', async () => {
+    const change = vi.spyOn(apiClient, 'changeEmail');
+    await openChangeEmail();
+
+    typeInto('New email', 'new@example.com');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('form', { name: 'Change email' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Change email' })).toBeTruthy();
+    expect(change).not.toHaveBeenCalled();
+  });
 });

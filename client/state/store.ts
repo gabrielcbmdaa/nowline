@@ -173,6 +173,19 @@ export async function resendConfirmation(): Promise<apiClient.Sent | ApiFailure 
 }
 
 /**
+ * Ask the server to move the account to another address. The current password
+ * goes with it; a wrong one is a 403 and the device stays signed in.
+ */
+export async function changeAccountEmail(email: string, password: string): Promise<apiClient.Sent | ApiFailure | null> {
+  const token = await sessionToken();
+  if (token === null) return null;
+
+  const result = await apiClient.changeEmail(token, email, password);
+  if (isFailure(result) && result.kind === 'unauthorized') signedOutByServer();
+  return result;
+}
+
+/**
  * Leaves the account on this device through the engine, which uploads first
  * and asks before removing anything. Signed out, the app starts over on the
  * calendar tab, as it would for whoever signs in next.
