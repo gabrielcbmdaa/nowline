@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
@@ -71,6 +71,7 @@ describe('AccountScreen', () => {
         screen.getByText('No email on this account. Add one to sign in on other devices and recover your password.'),
       ).toBeTruthy(),
     );
+    expect(screen.queryByRole('button', { name: 'Resend confirmation' })).toBeNull();
   });
 
   it('shows loading, then the failure with a way to try again', async () => {
@@ -96,5 +97,57 @@ describe('AccountScreen', () => {
     await vi.waitFor(() => expect(getState().entry).toBe('signed-out'));
     expect(screen.queryByRole('alert')).toBeNull();
     expect(leave).not.toHaveBeenCalled();
+  });
+
+  it('resends the confirmation, and says where it went', async () => {
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ userId: 'u1', email: 'ana@example.com', verifiedAt: null });
+    const send = vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({ sent: true });
+    render(<AccountScreen />);
+    await vi.waitFor(() => expect(screen.getByText('Not confirmed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend confirmation' }));
+
+    await vi.waitFor(() => expect(screen.getByRole('status').textContent).toBe('Sent to ana@example.com.'));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Resend confirmation' })).toBeNull();
+  });
+
+  it('says so when the email could not leave, and keeps the button', async () => {
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ userId: 'u1', email: 'ana@example.com', verifiedAt: null });
+    vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({ sent: false });
+    render(<AccountScreen />);
+    await vi.waitFor(() => expect(screen.getByText('Not confirmed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend confirmation' }));
+
+    // The account is unchanged; a "sent" line here would be a lie.
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('The email could not be sent. Try again in a few minutes.'),
+    );
+    expect(screen.getByRole('button', { name: 'Resend confirmation' })).toBeTruthy();
+  });
+
+  it('says the door is shut after too many resends', async () => {
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ userId: 'u1', email: 'ana@example.com', verifiedAt: null });
+    vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({
+      failed: true,
+      kind: 'refused',
+      status: 429,
+      detail: { error: 'too many attempts' },
+    });
+    render(<AccountScreen />);
+    await vi.waitFor(() => expect(screen.getByText('Not confirmed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend confirmation' }));
+
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/too many attempts/i));
+  });
+
+  it('does not offer to resend when the address is already confirmed', async () => {
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ userId: 'u1', email: 'ana@example.com', verifiedAt: '2026-09-17T10:00:00.000Z' });
+    render(<AccountScreen />);
+
+    await vi.waitFor(() => expect(screen.getByText('Confirmed')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Resend confirmation' })).toBeNull();
   });
 });

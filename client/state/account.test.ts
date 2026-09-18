@@ -12,7 +12,15 @@ vi.mock('../storage/sync', () => ({
 import * as apiClient from '../storage/apiClient';
 import { repository } from '../storage/repository';
 import { inspectFirstSync, signOut } from '../storage/sync';
-import { decideEntry, getState, loadAccount, loadAll, setTab, signOutOfDevice } from './store';
+import {
+  decideEntry,
+  getState,
+  loadAccount,
+  loadAll,
+  resendConfirmation,
+  setTab,
+  signOutOfDevice,
+} from './store';
 
 const look = inspectFirstSync as Mock;
 const leave = signOut as Mock;
@@ -124,5 +132,40 @@ describe('the account tab', () => {
     expect(getState().entry).toBe('ready');
     expect(getState().tab).toBe('account');
     expect(getState().account).toEqual(ana);
+  });
+
+  it('asks for the confirmation again with the token, and hands the answer to the tab', async () => {
+    await signedInAndReady();
+    const send = vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({ sent: true });
+
+    expect(await resendConfirmation()).toEqual({ sent: true });
+
+    expect(send).toHaveBeenCalledWith('abc');
+    expect(getState().entry).toBe('ready');
+  });
+
+  it('signs the device out when the confirmation request meets a dead session', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({
+      failed: true,
+      kind: 'unauthorized',
+      status: 401,
+      detail: null,
+    });
+
+    expect(await resendConfirmation()).toEqual({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('does not ask to resend when the engine already dropped the token', async () => {
+    await signedInAndReady();
+    await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    const send = vi.spyOn(apiClient, 'sendConfirmation');
+
+    expect(await resendConfirmation()).toBeNull();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(getState().entry).toBe('signed-out');
   });
 });
