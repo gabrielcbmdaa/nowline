@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
@@ -14,6 +14,7 @@ import * as apiClient from '../../storage/apiClient';
 import { repository } from '../../storage/repository';
 import { inspectFirstSync, signOut } from '../../storage/sync';
 import { decideEntry, getState, loadAll } from '../../state/store';
+import { CONFIRM_ARMS_AFTER_MS } from '../FirstSyncScreen';
 import { AccountScreen } from './AccountScreen';
 
 const look = inspectFirstSync as Mock;
@@ -35,6 +36,7 @@ describe('AccountScreen', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     vi.restoreAllMocks();
   });
@@ -232,5 +234,95 @@ describe('AccountScreen', () => {
     expect(screen.queryByRole('form', { name: 'Change email' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Change email' })).toBeTruthy();
     expect(change).not.toHaveBeenCalled();
+  });
+
+  async function signedInTab(): Promise<void> {
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ userId: 'u1', email: 'ana@example.com', verifiedAt: '2026-09-17T10:00:00.000Z' });
+    render(<AccountScreen />);
+    await vi.waitFor(() => expect(screen.getByText('ana@example.com')).toBeTruthy());
+  }
+
+  it('signs out through the engine when nothing is at risk', async () => {
+    leave.mockImplementation(async () => {
+      await repository.writeSyncState({ token: null, userId: null, cursor: null, joined: false });
+      return { kind: 'signed-out' };
+    });
+    await signedInTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await vi.waitFor(() => expect(getState().entry).toBe('signed-out'));
+    expect(leave).toHaveBeenCalledWith(null);
+  });
+
+  it('asks before removing unsent changes, arms the answer after the delay, and carries it through', async () => {
+    leave.mockResolvedValueOnce({ kind: 'at-risk', atRisk: 3 }).mockImplementationOnce(async () => {
+      await repository.writeSyncState({ token: null, userId: null, cursor: null, joined: false });
+      return { kind: 'signed-out' };
+    });
+    await signedInTab();
+    // Fake timers only from here: the arm delay is what this test measures.
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(
+      screen.getByText(
+        '3 changes have not been uploaded and will be removed from this device; a copy stays in its storage.',
+      ),
+    ).toBeTruthy();
+    const anyway = screen.getByRole('button', { name: 'Sign out anyway' });
+    if (!(anyway instanceof HTMLButtonElement)) throw new Error('expected a button');
+    // A second tap of a double tap on "Sign out" must land on a button that does nothing yet.
+    expect(anyway.disabled).toBe(true);
+    expect(leave).toHaveBeenCalledTimes(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(CONFIRM_ARMS_AFTER_MS));
+    expect(anyway.disabled).toBe(false);
+
+    fireEvent.click(anyway);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(leave).toHaveBeenLastCalledWith('discard');
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('speaks in the singular about one change', async () => {
+    leave.mockResolvedValue({ kind: 'at-risk', atRisk: 1 });
+    await signedInTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await vi.waitFor(() =>
+      expect(
+        screen.getByText('1 change has not been uploaded and will be removed from this device; a copy stays in its storage.'),
+      ).toBeTruthy(),
+    );
+  });
+
+  it('folds the question away on Cancel, and says nothing answered when there is no network', async () => {
+    leave
+      .mockResolvedValueOnce({ kind: 'at-risk', atRisk: 2 })
+      .mockResolvedValueOnce({ kind: 'offline' })
+      .mockResolvedValueOnce({ kind: 'refused', status: 500 });
+    await signedInTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('button', { name: 'Sign out anyway' })).toBeNull();
+    expect(getState().entry).toBe('ready');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/no answer|connection/i));
+    expect(getState().entry).toBe('ready');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('The server did not accept the request (500).'),
+    );
+    expect(getState().entry).toBe('ready');
   });
 });

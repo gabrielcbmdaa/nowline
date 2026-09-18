@@ -1,8 +1,9 @@
 import { useEffect, useState, type JSX } from 'react';
-import { loadAccount, resendConfirmation, useAppState } from '../../state/store';
+import { loadAccount, resendConfirmation, signOutOfDevice, useAppState } from '../../state/store';
 import { isFailure } from '../../storage/apiClient';
 import { COULD_NOT_SEND, failureMessage } from '../failureMessage';
 import { ChangeEmailForm } from './ChangeEmailForm';
+import { SignOutPrompt } from './SignOutPrompt';
 
 /**
  * What the server knows about the account, and the three things that can be
@@ -16,6 +17,30 @@ export function AccountScreen(): JSX.Element {
   const [resending, setResending] = useState(false);
   const [changing, setChanging] = useState(false);
   const [linkSentTo, setLinkSentTo] = useState<string | null>(null);
+  const [atRisk, setAtRisk] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+
+  async function leave(answer: 'discard' | null): Promise<void> {
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      const outcome = await signOutOfDevice(answer);
+      if (outcome.kind === 'at-risk') {
+        setAtRisk(outcome.atRisk);
+        return;
+      }
+      setAtRisk(null);
+      if (outcome.kind === 'offline' || outcome.kind === 'refused') {
+        const status = outcome.kind === 'refused' ? outcome.status : null;
+        setLeaveError(failureMessage({ failed: true, kind: outcome.kind, status, detail: null }));
+      }
+      // signed-out: the store already decided the entry; this screen is about to unmount.
+    } finally {
+      setLeaving(false);
+    }
+  }
 
   async function resend(): Promise<void> {
     if (resending) return;
@@ -136,6 +161,38 @@ export function AccountScreen(): JSX.Element {
               }}
             >
               Change email
+            </button>
+          </div>
+        )}
+      </section>
+      <section className="account__row">
+        {leaveError && (
+          <p className="error" role="alert">
+            {leaveError}
+          </p>
+        )}
+        {atRisk !== null ? (
+          <SignOutPrompt
+            atRisk={atRisk}
+            busy={leaving}
+            onConfirm={() => {
+              void leave('discard');
+            }}
+            onCancel={() => {
+              setAtRisk(null);
+            }}
+          />
+        ) : (
+          <div className="account__actions">
+            <button
+              className="button"
+              type="button"
+              disabled={leaving}
+              onClick={() => {
+                void leave(null);
+              }}
+            >
+              {leaving ? 'Signing out' : 'Sign out'}
             </button>
           </div>
         )}
