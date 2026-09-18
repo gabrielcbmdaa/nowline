@@ -1059,6 +1059,21 @@ describe('signOut', () => {
     expect(await repo.readSyncState()).toEqual(signedOut);
   });
 
+  it('asks about the queued row when the round found the token already dead', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const send = vi.fn().mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+    const revoke = vi.fn();
+
+    expect(await signOut(null, { send, revoke, repo, today })).toEqual({ kind: 'at-risk', atRisk: 1 });
+
+    // Spec §12: a 401 drops the token inside the round, then step 2 still
+    // counts the queue. Emptying here would drop a change no cloud has, with
+    // no copy and no question.
+    expect((await repo.readSyncState()).token).toBeNull();
+    expect((await repo.listPlans()).map((row) => row.id)).toEqual(['mine']);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
   it('stays signed in when the server could not be asked to forget the session', async () => {
     const repo = await deviceWithOneUnsentChange();
     const send = vi.fn().mockResolvedValue(emptyReply('T2'));
@@ -1097,5 +1112,38 @@ describe('signOut', () => {
     // has ever reached a cloud.
     expect(send).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it('waits for a round already going before it counts what is at risk', async () => {
+    const repo = await deviceWithOneUnsentChange();
+    const order: string[] = [];
+    let releaseRound: (value: unknown) => void = () => {};
+    const send = vi.fn()
+      .mockImplementationOnce(async () => {
+        order.push('round');
+        await new Promise((resolve) => {
+          releaseRound = resolve;
+        });
+        return emptyReply('T2');
+      })
+      .mockResolvedValue(emptyReply('T3'));
+    const revoke = vi.fn().mockResolvedValue(true);
+
+    const round = syncOnce({ send, repo });
+    const leaving = signOut(null, { send, revoke, repo, today });
+    await vi.waitFor(() => expect(order).toEqual(['round']));
+
+    // Still inside the in-flight round. Without the door, signOut would have
+    // started a second send already.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(revoke).not.toHaveBeenCalled();
+
+    releaseRound(undefined);
+    await round;
+    // The round delivered `mine` before the count. Counted outside the
+    // engine's door, the question would be about a change already in the cloud.
+    expect(await leaving).toEqual({ kind: 'signed-out' });
+    expect(revoke).toHaveBeenCalledWith('abc');
+    expect(await repo.listPlans()).toEqual([]);
   });
 });
