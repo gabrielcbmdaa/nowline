@@ -2,11 +2,13 @@ import { useSyncExternalStore } from 'react';
 import { toDateKey } from '../domain/dates';
 import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
+import * as apiClient from '../storage/apiClient';
+import { isFailure, type Account, type ApiFailure } from '../storage/apiClient';
 import { repository } from '../storage/repository';
-import { inspectFirstSync, settleFirstSync, syncOnce } from '../storage/sync';
+import { inspectFirstSync, settleFirstSync, signOut, syncOnce, type SignOutOutcome } from '../storage/sync';
 import { takeEmailLink, type EmailLink } from './emailLink';
 
-export type TabId = 'calendar' | 'summary' | 'projects';
+export type TabId = 'calendar' | 'summary' | 'projects' | 'account';
 
 export type AppState = {
   loaded: boolean;
@@ -27,6 +29,12 @@ export type AppState = {
   firstSync: { local: number; remote: number } | null;
   /** The emailed link being followed, taken from the URL once; see `decideEntry`. */
   link: EmailLink | null;
+  /**
+   * What the server said about the account, asked once when the Account tab
+   * mounts and never per render. `accountFailure` is why there is no answer.
+   */
+  account: Account | null;
+  accountFailure: ApiFailure | null;
 };
 
 /** Everything fits in memory: a year of blocks is well under a megabyte. */
@@ -41,6 +49,8 @@ let state: AppState = {
   entry: 'deciding',
   firstSync: null,
   link: null,
+  account: null,
+  accountFailure: null,
 };
 
 const listeners = new Set<() => void>();
@@ -119,6 +129,52 @@ export async function finishLink(): Promise<void> {
   setState({ entry: 'deciding', link: null, firstSync: null });
   await loadAll();
   await decideEntry();
+}
+
+/**
+ * A 401 on any signed-in route: the session is over. The same rule as a
+ * rejected round, and only from the calendar, for the same reason. The dead
+ * token is the engine's to drop, on its next round.
+ */
+function signedOutByServer(): void {
+  setState({ account: null, accountFailure: null });
+  if (state.entry === 'ready') setState({ entry: 'signed-out', firstSync: null });
+}
+
+/** The token a signed-in route needs, or `null` once the engine has dropped it. */
+async function sessionToken(): Promise<string | null> {
+  const { token } = await repository.readSyncState();
+  if (token === null) signedOutByServer();
+  return token;
+}
+
+/** One request, when the Account tab mounts. */
+export async function loadAccount(): Promise<void> {
+  setState({ account: null, accountFailure: null });
+  const token = await sessionToken();
+  if (token === null) return;
+
+  const result = await apiClient.me(token);
+  if (isFailure(result)) {
+    if (result.kind === 'unauthorized') return signedOutByServer();
+    return setState({ accountFailure: result });
+  }
+  setState({ account: result });
+}
+
+/**
+ * Leaves the account on this device through the engine, which uploads first
+ * and asks before removing anything. Signed out, the app starts over on the
+ * calendar tab, as it would for whoever signs in next.
+ */
+export async function signOutOfDevice(answer: 'discard' | null): Promise<SignOutOutcome> {
+  const outcome = await signOut(answer);
+  if (outcome.kind !== 'signed-out') return outcome;
+
+  setState({ account: null, accountFailure: null, tab: 'calendar' });
+  await loadAll();
+  await decideEntry();
+  return outcome;
 }
 
 export function setTab(tab: TabId): void {
