@@ -3,6 +3,7 @@ import { clampScale, DEFAULT_PIXELS_PER_HOUR } from '../domain/geometry';
 import { toDateKey } from '../domain/dates';
 import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
+import { readZoom, writeZoom } from '../storage/preferences';
 import { repository } from '../storage/repository';
 import { inspectFirstSync, settleFirstSync, syncOnce } from '../storage/sync';
 
@@ -82,7 +83,14 @@ export async function loadAll(): Promise<void> {
     repository.listPlans(),
     repository.listOverrides(),
   ]);
-  setState({ projects, plans, overrides, loaded: true, now: new Date() });
+  setState({
+    projects,
+    plans,
+    overrides,
+    loaded: true,
+    now: new Date(),
+    pixelsPerHour: readZoom(),
+  });
 }
 
 export async function decideEntry(): Promise<void> {
@@ -123,7 +131,9 @@ export function setTab(tab: TabId): void {
  * wheel or fingers — can put a value outside the range into the state.
  */
 export function setZoom(pixelsPerHour: number): void {
-  setState({ pixelsPerHour: clampScale(pixelsPerHour) });
+  const next = clampScale(pixelsPerHour);
+  setState({ pixelsPerHour: next });
+  writeZoom(next);
 }
 
 export function abortGestures(): void {
