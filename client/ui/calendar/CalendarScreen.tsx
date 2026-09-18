@@ -1,10 +1,10 @@
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { minutesSinceMidnight, toDateKey } from '../../domain/dates';
 import { DEFAULT_PIXELS_PER_HOUR } from '../../domain/geometry';
-import { steppedScale } from '../../domain/zoom';
+import { steppedScale, wheelScale } from '../../domain/zoom';
 import { indexOverrides, occurrencesForDay } from '../../domain/recurrence';
 import { reportError } from '../../reportError';
-import { startTimerFor, stopRunningTimer, useAppState } from '../../state/store';
+import { getState, startTimerFor, stopRunningTimer, useAppState } from '../../state/store';
 import { formatDayHeading } from '../format';
 import { DatePickerSheet } from '../sheets/DatePickerSheet';
 import { DaySection } from './DaySection';
@@ -41,6 +41,35 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
     () => new Map(state.projects.map((project) => [project.id, project])),
     [state.projects],
   );
+
+  // Not React's onWheel: React 19 registers it passive, and a passive listener
+  // cannot cancel the browser's own page zoom. Without preventDefault, Ctrl
+  // plus wheel would zoom the page and the calendar at the same time.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    function onWheel(event: WheelEvent) {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const el = scrollRef.current;
+      if (!el) return;
+      // deltaMode 1 is lines and 2 is pages; Firefox sends both. Unnormalised,
+      // a deltaY of 3 lines would read as 3 pixels and the wheel would do
+      // almost nothing.
+      const LINE_HEIGHT = 16;
+      const factor =
+        event.deltaMode === 1 ? LINE_HEIGHT : event.deltaMode === 2 ? el.clientHeight : 1;
+      const bounds = el.getBoundingClientRect();
+      zoomTo(
+        wheelScale(getState().pixelsPerHour, event.deltaY * factor),
+        event.clientY - bounds.top,
+      );
+    }
+
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [zoomTo, scrollRef]);
 
   return (
     <div className="calendar">

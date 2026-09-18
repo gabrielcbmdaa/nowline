@@ -9,6 +9,7 @@ import {
   documentMinuteAt,
   scrollTopForScale,
   steppedScale,
+  wheelScale,
 } from './zoom';
 
 describe('steppedScale', () => {
@@ -58,5 +59,23 @@ describe('the instant under the focal point does not move', () => {
     expect(scrollTopForScale(minute, 120, 200)).toBe(2200);
     // And back out to 30: pixel 600, so scrollTop 400.
     expect(scrollTopForScale(minute, MIN_PIXELS_PER_HOUR, 200)).toBe(400);
+  });
+});
+
+describe('wheelScale', () => {
+  it('makes one mouse notch worth one keyboard step', () => {
+    // Chrome sends deltaY 100 per notch. Up (negative) zooms in.
+    expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, -100)).toBe(70);
+    expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, 100)).toBe(50);
+  });
+
+  it('scales with the delta, so a trackpad moves a little at a time', () => {
+    expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, -10)).toBe(61);
+    expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, 5)).toBe(59.5);
+  });
+
+  it('stops at the limits', () => {
+    expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, -10000)).toBe(MAX_PIXELS_PER_HOUR);
+    expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, 10000)).toBe(MIN_PIXELS_PER_HOUR);
   });
 });

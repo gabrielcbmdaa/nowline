@@ -22,6 +22,19 @@ export function steppedScale(pixelsPerHour: number, steps: number): number {
   return clampScale(pixelsPerHour + steps * ZOOM_STEP_PIXELS_PER_HOUR);
 }
 
+/**
+ * What a wheel notch is worth. Chrome sends deltaY 100 for one notch, so a
+ * notch is one keyboard step; a trackpad sends many small deltas and moves
+ * proportionally little, which is the behaviour a trackpad should have.
+ */
+const PIXELS_PER_HOUR_PER_WHEEL_PIXEL = ZOOM_STEP_PIXELS_PER_HOUR / 100;
+
+/** `deltaPixels` must already be normalised out of deltaMode by the caller. */
+export function wheelScale(pixelsPerHour: number, deltaPixels: number): number {
+  // Wheel down is positive deltaY, and zooms out: the direction of every map.
+  return clampScale(pixelsPerHour - deltaPixels * PIXELS_PER_HOUR_PER_WHEEL_PIXEL);
+}
+
 /** Which minute of the strip sits `focalOffset` pixels below the viewport's top edge. */
 export function documentMinuteAt(
   scrollTop: number,
