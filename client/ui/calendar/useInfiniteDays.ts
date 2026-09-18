@@ -1,8 +1,18 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { addDays } from '../../domain/dates';
 import { clampScale, dayHeight, minuteToPixel } from '../../domain/geometry';
-import { documentMinuteAt, scrollTopForScale } from '../../domain/zoom';
+import { applyPinch, documentMinuteAt, scrollTopForScale, type PinchAnchor } from '../../domain/zoom';
 import { setVisibleDate as publishVisibleDate, setZoom } from '../../state/store';
+
+function spanOf(pointers: Map<number, number>): number {
+  const [first, second] = [...pointers.values()];
+  return Math.abs(first - second);
+}
+
+function midpointOf(pointers: Map<number, number>): number {
+  const [first, second] = [...pointers.values()];
+  return (first + second) / 2;
+}
 
 /** Days kept mounted at once; 365 would be half a million pixels tall. */
 export const WINDOW_DAYS = 7;
@@ -32,6 +42,16 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
   /** Read inside the scroll handler, which is created once. */
   const pixelsPerHourRef = useRef(pixelsPerHour);
 
+  /** The two pointers of a pinch, by id, and what the gesture is anchored to. */
+  const pinchPointers = useRef(new Map<number, number>());
+  const pinchAnchor = useRef<PinchAnchor | null>(null);
+  /**
+   * While a pinch is live the strip holds still: one thing changes the geometry
+   * at a time. Two would leave relativeAdjust compensating with one scale for
+   * content laid out at another, which jumps the strip a whole day.
+   */
+  const zooming = useRef(false);
+
   useLayoutEffect(() => {
     daysRef.current = days;
     pixelsPerHourRef.current = pixelsPerHour;
@@ -60,6 +80,9 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
   const onScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element || adjusting.current) return;
+    // The strip does not shift while the scale is moving; the check runs once
+    // more when the fingers come up, with the scale already settled.
+    if (zooming.current) return;
 
     const height = dayHeight(pixelsPerHourRef.current);
 
@@ -125,5 +148,54 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
     absoluteTarget.current = Math.max(0, scrollTopForScale(documentMinute, next, offset));
   }, []);
 
-  return { days, visibleDate, scrollRef, onScroll, goTo, zoomTo };
+  const onPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const pointers = pinchPointers.current;
+    pointers.set(event.pointerId, event.clientY);
+    if (pointers.size !== 2) return;
+    zooming.current = true;
+    pinchAnchor.current = {
+      pixelsPerHour: pixelsPerHourRef.current,
+      span: spanOf(pointers),
+    };
+  }, []);
+
+  const onPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const pointers = pinchPointers.current;
+      if (!pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, event.clientY);
+      const anchor = pinchAnchor.current;
+      const element = scrollRef.current;
+      if (!anchor || pointers.size !== 2 || !element) return;
+
+      const next = applyPinch(anchor, spanOf(pointers));
+      pinchAnchor.current = next.anchor;
+      const bounds = element.getBoundingClientRect();
+      // The focal point of this gesture: the middle of the two fingers.
+      const focalOffset = midpointOf(pointers) - bounds.top;
+      zoomTo(next.pixelsPerHour, focalOffset);
+    },
+    [zoomTo],
+  );
+
+  const endPinch = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const pointers = pinchPointers.current;
+    if (!pointers.delete(event.pointerId)) return;
+    if (pointers.size >= 2) return;
+    pinchAnchor.current = null;
+    zooming.current = false;
+  }, []);
+
+  return {
+    days,
+    visibleDate,
+    scrollRef,
+    onScroll,
+    goTo,
+    zoomTo,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp: endPinch,
+    onPointerCancel: endPinch,
+  };
 }

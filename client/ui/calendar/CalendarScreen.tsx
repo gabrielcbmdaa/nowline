@@ -18,10 +18,18 @@ type Props = {
 export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
   const state = useAppState();
   const today = toDateKey(state.now);
-  const { days, visibleDate, scrollRef, onScroll, goTo, zoomTo } = useInfiniteDays(
-    today,
-    state.pixelsPerHour,
-  );
+  const {
+    days,
+    visibleDate,
+    scrollRef,
+    onScroll,
+    goTo,
+    zoomTo,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  } = useInfiniteDays(today, state.pixelsPerHour);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Layout effect, not effect: positioning after the first paint shows the top of
@@ -90,6 +98,10 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
         className="calendar__scroll"
         ref={scrollRef}
         onScroll={onScroll}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         tabIndex={0}
         onKeyDown={(event) => {
           // On the container and not on the document: Sheet's own listener only

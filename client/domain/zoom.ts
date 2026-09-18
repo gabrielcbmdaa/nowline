@@ -56,3 +56,31 @@ export function scrollTopForScale(
 ): number {
   return (documentMinute / 60) * pixelsPerHour - focalOffset;
 }
+
+/** What the gesture recorded when it started, and what a limit re-anchors. */
+export type PinchAnchor = { pixelsPerHour: number; span: number };
+
+/**
+ * The scale the fingers are asking for, and the anchor to keep asking against.
+ *
+ * The anchor comes back out, rather than only going in, because of the limits:
+ * when the scale clamps, the anchor clamps with it. Without that, spreading the
+ * fingers past the ceiling banks scale nobody can see, and the pinch has to
+ * travel all the way back before the screen moves again. AOSP's DayView does
+ * the same thing in onScale, for the same reason.
+ */
+export function applyPinch(
+  anchor: PinchAnchor,
+  span: number,
+): { pixelsPerHour: number; anchor: PinchAnchor } {
+  // A span of nothing is two fingers in the same place: no ratio to be had.
+  if (anchor.span <= 0 || span <= 0) {
+    return { pixelsPerHour: anchor.pixelsPerHour, anchor };
+  }
+  const asked = anchor.pixelsPerHour * (span / anchor.span);
+  const pixelsPerHour = clampScale(asked);
+  if (pixelsPerHour !== asked) {
+    return { pixelsPerHour, anchor: { pixelsPerHour, span } };
+  }
+  return { pixelsPerHour, anchor };
+}

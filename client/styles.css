@@ -332,6 +332,12 @@ body {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /*
+   * The browser keeps the vertical pan and lets go of the pinch, which is ours:
+   * two fingers change the hour scale. Without this, a phone would zoom the
+   * page instead — iOS Safari ignores user-scalable=no on purpose.
+   */
+  touch-action: pan-y;
   position: relative;
   /*
    * Browsers with scroll anchoring shift scrollTop themselves when content is

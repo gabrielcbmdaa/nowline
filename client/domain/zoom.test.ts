@@ -6,6 +6,7 @@ import {
 } from './geometry';
 import {
   ZOOM_STEP_PIXELS_PER_HOUR,
+  applyPinch,
   documentMinuteAt,
   scrollTopForScale,
   steppedScale,
@@ -77,5 +78,41 @@ describe('wheelScale', () => {
   it('stops at the limits', () => {
     expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, -10000)).toBe(MAX_PIXELS_PER_HOUR);
     expect(wheelScale(DEFAULT_PIXELS_PER_HOUR, 10000)).toBe(MIN_PIXELS_PER_HOUR);
+  });
+});
+
+describe('applyPinch', () => {
+  const at60 = { pixelsPerHour: DEFAULT_PIXELS_PER_HOUR, span: 200 };
+
+  it('follows the fingers in proportion', () => {
+    expect(applyPinch(at60, 400).pixelsPerHour).toBe(120);
+    expect(applyPinch(at60, 100).pixelsPerHour).toBe(30);
+    expect(applyPinch(at60, 200).pixelsPerHour).toBe(DEFAULT_PIXELS_PER_HOUR);
+  });
+
+  it('keeps the same anchor while the scale is inside the range', () => {
+    const { anchor } = applyPinch(at60, 300);
+    expect(anchor).toEqual(at60);
+  });
+
+  it('re-anchors when it hits a limit, so the gesture banks nothing', () => {
+    // 200 -> 800 asks for 240, which clamps to 140. The anchor moves with it.
+    const hit = applyPinch(at60, 800);
+    expect(hit.pixelsPerHour).toBe(MAX_PIXELS_PER_HOUR);
+    expect(hit.anchor).toEqual({ pixelsPerHour: MAX_PIXELS_PER_HOUR, span: 800 });
+    // Closing the fingers a little now moves the screen straight away, instead
+    // of paying back the 100px/hour the old anchor would have banked.
+    expect(applyPinch(hit.anchor, 700).pixelsPerHour).toBe(122.5);
+  });
+
+  it('re-anchors at the floor too', () => {
+    const hit = applyPinch(at60, 50);
+    expect(hit.pixelsPerHour).toBe(MIN_PIXELS_PER_HOUR);
+    expect(hit.anchor).toEqual({ pixelsPerHour: MIN_PIXELS_PER_HOUR, span: 50 });
+  });
+
+  it('answers the starting scale for a span of nothing, instead of dividing by zero', () => {
+    expect(applyPinch({ pixelsPerHour: 90, span: 0 }, 300).pixelsPerHour).toBe(90);
+    expect(applyPinch({ pixelsPerHour: 90, span: 300 }, 0).pixelsPerHour).toBe(90);
   });
 });
