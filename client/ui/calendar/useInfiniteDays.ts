@@ -79,7 +79,9 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
 
   const onScroll = useCallback(() => {
     const element = scrollRef.current;
-    if (!element || adjusting.current) return;
+    // A viewport of 0px cannot tell a window edge from the top of the strip —
+    // jsdom is the standing case; a hidden calendar would be another.
+    if (!element || adjusting.current || element.clientHeight === 0) return;
     // The strip does not shift while the scale is moving; the check runs once
     // more when the fingers come up, with the scale already settled.
     if (zooming.current) return;
@@ -187,8 +189,14 @@ export function useInfiniteDays(initialDate: string, pixelsPerHour: number) {
     if (!pointers.delete(event.pointerId)) return;
     if (pointers.size >= 2) return;
     pinchAnchor.current = null;
+    const wasZooming = zooming.current;
     zooming.current = false;
-  }, []);
+    // Native scroll was swallowed while zooming, and setting scrollTop in the
+    // layout effect sets `adjusting`, so the strip never heard this gesture
+    // end. Run the check now, at the settled scale, and only if a pinch
+    // actually ran — every pointerup on the scroller reaches here.
+    if (wasZooming) onScroll();
+  }, [onScroll]);
 
   return {
     days,

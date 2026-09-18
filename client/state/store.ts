@@ -29,8 +29,9 @@ export type AppState = {
    * Bumped the instant a second pointer joins the calendar. A block with a drag
    * in progress watches this and gives the gesture up: the pinch owns it, and a
    * drag that survived would read its pixel delta at a scale that did not
-   * measure it. Events bubble, so the container cannot tell the block any other
-   * way, and this project has no React context.
+   * measure it. Pinch handlers are bound in capture on the scroller; the block
+   * still needs this counter because its drag lives in a hook that cannot see
+   * the scroller's pointer map. This project has no React context.
    */
   gestureAbort: number;
   /**
