@@ -82,7 +82,13 @@ confirmed address receives, and opening a link spends nothing until you press it
 button. A device signs in once, and if both sides already have data it asks once
 what to do with the two copies.
 
-Three tabs: **Calendar**, **Summary**, **Projects**.
+The **Account** tab shows the address on the account and whether it is confirmed, resends
+the confirmation, changes the address (with the current password; the change happens when the
+link is opened), and signs this device out. Signing out uploads first, asks before removing
+anything no cloud has, and asks the server to forget the session before the device is
+emptied — so it needs the network, like an upload does.
+
+Four tabs: **Calendar**, **Summary**, **Projects**, **Account**.
 
 A **project** is nothing but a coloured label. A **block** is a plan: a title, a time, a
 duration and a repeat rule. Pressing **play** on today's block starts a timer; the block

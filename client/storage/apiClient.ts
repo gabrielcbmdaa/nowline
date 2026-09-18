@@ -60,16 +60,17 @@ async function detailOf(response: Response): Promise<Record<string, unknown> | n
   }
 }
 
-async function post(path: string, body: unknown, token?: string): Promise<unknown> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+async function request(method: 'GET' | 'POST', path: string, body: unknown, token?: string): Promise<unknown> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['content-type'] = 'application/json';
   if (token) headers.authorization = `Bearer ${token}`;
 
   let response: Response;
   try {
     response = await fetch(path, {
-      method: 'POST',
+      method,
       headers,
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(GIVE_UP_AFTER_MS),
     });
   } catch {
@@ -96,6 +97,10 @@ async function post(path: string, body: unknown, token?: string): Promise<unknow
   }
 }
 
+function post(path: string, body: unknown, token?: string): Promise<unknown> {
+  return request('POST', path, body, token);
+}
+
 /** A token and its account from a reply body, or `null` unless both are strings. */
 function sessionIn(body: unknown): Session | null {
   if (typeof body !== 'object' || body === null) return null;
@@ -116,6 +121,47 @@ export async function login(email: string, password: string): Promise<Session | 
 export async function logout(token: string): Promise<true | ApiFailure> {
   const result = await post('/api/auth/logout', {}, token);
   return isFailure(result) ? result : true;
+}
+
+/** What the server knows about the account a token belongs to. */
+export type Account = { userId: string; email: string | null; verifiedAt: string | null };
+
+function accountIn(body: unknown): Account | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const { userId, email, verifiedAt } = body as { userId?: unknown; email?: unknown; verifiedAt?: unknown };
+  if (typeof userId !== 'string') return null;
+  if (email !== null && typeof email !== 'string') return null;
+  if (verifiedAt !== null && typeof verifiedAt !== 'string') return null;
+  return { userId, email, verifiedAt };
+}
+
+/** The first GET: who this token belongs to. A 401 is a session that is over. */
+export async function me(token: string): Promise<Account | ApiFailure> {
+  const result = await request('GET', '/api/auth/me', undefined, token);
+  if (isFailure(result)) return result;
+  return accountIn(result) ?? { failed: true, kind: 'refused', status: 200, detail: null };
+}
+
+/** Whether the email left. `false` means the provider refused; the account is unchanged. */
+export type Sent = { sent: boolean };
+
+function sentIn(body: unknown): Sent | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const { sent } = body as { sent?: unknown };
+  return typeof sent === 'boolean' ? { sent } : null;
+}
+
+export async function sendConfirmation(token: string): Promise<Sent | ApiFailure> {
+  const result = await post('/api/auth/send-confirmation', {}, token);
+  if (isFailure(result)) return result;
+  return sentIn(result) ?? { failed: true, kind: 'refused', status: 200, detail: null };
+}
+
+/** The current password is asked for here, and a wrong one is a 403: it must not end the session. */
+export async function changeEmail(token: string, email: string, password: string): Promise<Sent | ApiFailure> {
+  const result = await post('/api/auth/change-email', { email, password }, token);
+  if (isFailure(result)) return result;
+  return sentIn(result) ?? { failed: true, kind: 'refused', status: 200, detail: null };
 }
 
 /** A new account comes signed in, and says whether its confirmation email left. */

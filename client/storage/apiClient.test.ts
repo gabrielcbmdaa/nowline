@@ -1,6 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { confirmLink, isFailure, login, logout, register, requestReset, resetPassword, sync } from './apiClient';
+import {
+  changeEmail,
+  confirmLink,
+  isFailure,
+  login,
+  logout,
+  me,
+  register,
+  requestReset,
+  resetPassword,
+  sendConfirmation,
+  sync,
+} from './apiClient';
 
 const reply = (status: number, body: unknown) =>
   vi.fn().mockResolvedValue({
@@ -371,5 +383,91 @@ describe('apiClient', () => {
 
     vi.stubGlobal('fetch', reply(200, { confirmed: 'something' }));
     expect(await confirmLink('c'.repeat(64))).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+  });
+
+  it('asks who the token belongs to with a GET that carries the bearer token', async () => {
+    const fetcher = reply(200, { userId: 'u1', email: 'ana@example.com', verifiedAt: null });
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await me('the-token')).toEqual({ userId: 'u1', email: 'ana@example.com', verifiedAt: null });
+
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/me');
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Record<string, string>)['content-type']).toBeUndefined();
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer the-token');
+  });
+
+  it('refuses an account reply of the wrong shape, as login does', async () => {
+    // A released account has email null; a number there is not an address.
+    vi.stubGlobal('fetch', reply(200, { userId: 'u1', email: 42, verifiedAt: null }));
+    expect(await me('t')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+
+    vi.stubGlobal('fetch', reply(200, { userId: 'u1', email: null, verifiedAt: 42 }));
+    expect(await me('t')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+
+    vi.stubGlobal('fetch', reply(200, { email: 'ana@example.com', verifiedAt: null }));
+    expect(await me('t')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+
+    vi.stubGlobal('fetch', reply(200, { userId: 'u1', email: null, verifiedAt: '2026-09-17T10:00:00.000Z' }));
+    expect(await me('t')).toEqual({ userId: 'u1', email: null, verifiedAt: '2026-09-17T10:00:00.000Z' });
+  });
+
+  it('passes a dead session on me through as unauthorized', async () => {
+    vi.stubGlobal('fetch', reply(401, { error: 'invalid credentials' }));
+    expect(await me('t')).toEqual({
+      failed: true,
+      kind: 'unauthorized',
+      status: 401,
+      detail: { error: 'invalid credentials' },
+    });
+  });
+
+  it('asks for the confirmation again, and says whether the email left', async () => {
+    const fetcher = reply(200, { sent: true });
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await sendConfirmation('the-token')).toEqual({ sent: true });
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/send-confirmation');
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer the-token');
+
+    // The server says so when the provider refused; the account is unchanged.
+    vi.stubGlobal('fetch', reply(200, { sent: false }));
+    expect(await sendConfirmation('the-token')).toEqual({ sent: false });
+
+    // `sent` is the whole answer; a 200 without it is not this server.
+    vi.stubGlobal('fetch', reply(200, {}));
+    expect(await sendConfirmation('the-token')).toEqual({ failed: true, kind: 'refused', status: 200, detail: null });
+
+    vi.stubGlobal('fetch', reply(409, { error: 'already confirmed' }));
+    expect(await sendConfirmation('the-token')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 409,
+      detail: { error: 'already confirmed' },
+    });
+  });
+
+  it('asks to change the email with the current password, and keeps a 403 as a refusal', async () => {
+    const fetcher = reply(200, { sent: true });
+    vi.stubGlobal('fetch', fetcher);
+
+    expect(await changeEmail('the-token', 'new@example.com', 'the-current-password')).toEqual({ sent: true });
+    expect(fetcher.mock.calls[0][0]).toBe('/api/auth/change-email');
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'new@example.com', password: 'the-current-password' });
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer the-token');
+
+    // 403, never 401: a typo on the current password must not sign the device out.
+    vi.stubGlobal('fetch', reply(403, { error: 'wrong password' }));
+    expect(await changeEmail('the-token', 'new@example.com', 'typo')).toEqual({
+      failed: true,
+      kind: 'refused',
+      status: 403,
+      detail: { error: 'wrong password' },
+    });
   });
 });

@@ -12,6 +12,9 @@ const SENTENCES = new Map<string, string>([
   ['wrong password', 'The password is wrong.'],
 ]);
 
+/** A 200 whose `sent` is false: the provider refused the email and the account is unchanged. */
+export const COULD_NOT_SEND = 'The email could not be sent. Try again in a few minutes.';
+
 /**
  * One sentence for a request that did not go through. `unauthorized` is the
  * calling screen's own words for a 401, which means a wrong password on the
