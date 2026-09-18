@@ -22,6 +22,7 @@ import { RunawayTimerBanner } from './calendar/RunawayTimerBanner';
 import { ProjectsScreen } from './projects/ProjectsScreen';
 import { BlockEditorSheet } from './sheets/BlockEditorSheet';
 import { ProjectEditorSheet } from './sheets/ProjectEditorSheet';
+import { AccountScreen } from './account/AccountScreen';
 import { SummaryScreen } from './summary/SummaryScreen';
 
 type Sheet =
@@ -173,27 +174,31 @@ export function App() {
         {state.tab === 'projects' && (
           <ProjectsScreen onEdit={(project) => setSheet({ kind: 'project', project })} />
         )}
-        {/* Inside the screen so it sits above the tab bar without measuring it. */}
-        <Fab
-          actions={[
-            {
-              label: 'New time block',
-              onSelect: () => {
-                const target = newBlockTarget();
-                setSheet({
-                  kind: 'block',
-                  planId: null,
-                  date: target.date,
-                  startMinute: target.startMinute,
-                });
+        {state.tab === 'account' && <AccountScreen />}
+        {/* Inside the screen so it sits above the tab bar without measuring it.
+            Not on the account tab: there is nothing there to add a block to. */}
+        {state.tab !== 'account' && (
+          <Fab
+            actions={[
+              {
+                label: 'New time block',
+                onSelect: () => {
+                  const target = newBlockTarget();
+                  setSheet({
+                    kind: 'block',
+                    planId: null,
+                    date: target.date,
+                    startMinute: target.startMinute,
+                  });
+                },
               },
-            },
-            {
-              label: 'New project',
-              onSelect: () => setSheet({ kind: 'project', project: null }),
-            },
-          ]}
-        />
+              {
+                label: 'New project',
+                onSelect: () => setSheet({ kind: 'project', project: null }),
+              },
+            ]}
+          />
+        )}
       </main>
 
       <TabBar active={state.tab} onChange={setTab} />
