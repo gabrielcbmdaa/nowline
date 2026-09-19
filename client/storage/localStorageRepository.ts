@@ -61,7 +61,7 @@ const LEGACY_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['tt.overrides.v1', OVERRIDES_KEY],
 ];
 
-/** The only file in the app allowed to mention localStorage. */
+/** One of two files allowed to mention localStorage; preferences.ts holds the hour scale. */
 export class LocalStorageRepository implements BlockRepository {
   /**
    * The clock is a parameter so a test can freeze it. Every updatedAt in the

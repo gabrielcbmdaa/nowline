@@ -122,14 +122,19 @@ This is what makes correction work: change the end time and every number in the 
 follows, with nothing left to migrate. It is also why the summary can attribute a session
 that crosses midnight to both days — it has the real timestamps, not a lump sum.
 
-### The hour scale lives in exactly one constant
+### The hour scale is one parameter with one default
 
-`PIXELS_PER_HOUR = 64` in `client/domain/geometry.ts`. Nothing anywhere else may hardcode 64,
-or 1536, or a pixels-per-minute figure — everything goes through `minuteToPixel` and
-`DAY_HEIGHT`. Pinch-to-zoom on the hour scale is a wanted feature that has not been built;
-when it is, that one constant becomes a variable and the whole calendar follows.
+`DEFAULT_PIXELS_PER_HOUR = 60` in `client/domain/geometry.ts`, with
+`MIN_PIXELS_PER_HOUR = 30` and `MAX_PIXELS_PER_HOUR = 140`. Sixty makes one pixel one
+minute, so `dayHeight(60)` is 1440 and agrees with `MINUTES_PER_DAY`. Nothing anywhere
+else may hardcode 60, 1440, or a pixels-per-minute figure — everything goes through
+`minuteToPixel`, `pixelToMinute` and `dayHeight`, each of which takes the scale. The
+scale is a parameter and never a module variable: `domain/` is pure, and who holds the
+current value is `state.pixelsPerHour`. Pinch, `Ctrl`/`⌘`+wheel, and `+`/`−`/`0` on the
+calendar change it; `nowline.zoom.v1` remembers it on this device only.
 
-The same rule holds for `SNAP_MINUTES = 15` and `MINUTES_PER_DAY`.
+The same rule holds for `SNAP_MINUTES = 15`, which does **not** change with the zoom —
+the zoom gives precision of aim on the same quarter-hour grid — and `MINUTES_PER_DAY`.
 
 ### A day is a `'YYYY-MM-DD'` string, and never a `Date`
 
@@ -224,8 +229,8 @@ the gap between that read and the write — closing it needs an atomic compare-a
 ## Layout
 
 ```
-client/domain/         pure logic: geometry, dates, the stopwatch, recurrence, totals
-client/storage/        the repository interface and its localStorage implementation
+client/domain/         pure logic: geometry, zoom, dates, the stopwatch, recurrence, totals
+client/storage/        the repository, this device's zoom preference, and the localStorage rows
 client/storage/sync.ts one round: upload what is owed, download what is missing
 client/state/          one module-level store, exposed through useSyncExternalStore
 client/ui/             React components; client/ui/calendar/ is the strip
@@ -250,7 +255,7 @@ Vite and Vitest.
   The hour no clock shows on the day they go forward moves a block forward by the jump
   (02:30 becomes 03:30 in Madrid), which is the RFC 5545 reading and is pinned for every
   minute of the year. What does not happen is the grid growing or shrinking: the skipped
-  hour still takes up its 64 pixels.
+  hour still takes up its hour of the grid.
 - **Block times show no AM/PM** — `7:00` reads the same at either end of the day. The hour
   gutter beside the block supplies the context. Deliberate, matching the design.
 - **The date picker has no arrow-key navigation.** Tab and Enter work.

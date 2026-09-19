@@ -8,30 +8,53 @@ import { dimTowardPage, NO_PROJECT_COLOR, readableTextColor } from '../textColor
 import { useBlockDrag } from './useBlockDrag';
 
 /**
- * A quarter hour is 16px at the current scale, so this floor is what makes short
- * blocks look longer than they are. 18 keeps the single line of text legible while
- * inflating a 15-minute block by 2px instead of 14.
+ * A floor with one job: a block stays visible. Five pixels is five minutes at
+ * the default scale, and at the smallest scale it is what keeps a five-minute
+ * block from disappearing. It is deliberately not what makes the stopwatch
+ * button big enough — that is TIMER_MIN_HEIGHT, and separating the two is what
+ * closed the 18px floor of 2026-09-05.
  */
-const MIN_BLOCK_HEIGHT = 18;
+const MIN_BLOCK_HEIGHT = 5;
+
+/** Where one line of text is still legible. The figure the old floor carried. */
+const TEXT_MIN_HEIGHT = 18;
 
 /**
- * Stacked, the title and the time measure 30.5px together, so only blocks of half
- * an hour or more can hold both lines. Shorter ones keep them side by side.
+ * What is tappable of the button is min(34, this block's height), so drawing it
+ * below 24 is what used to give an 18px target where WCAG 2.2 SC 2.5.8 asks for
+ * 24. Withheld below that, the layout meets the criterion instead of a special
+ * case doing it, at every scale. A block under 24px offers no Start: the zoom
+ * is how you reach it, and the keyboard can zoom.
  */
-const STACKED_MIN_HEIGHT = 32;
+const TIMER_MIN_HEIGHT = 24;
+
+/**
+ * Stacked, the title and the time measure 30.5px together. At 60px/hour half an
+ * hour is exactly 30, so the threshold is 30 and the two lines give up half a
+ * pixel: the alternative is that no half-hour block stacks at the default
+ * scale, which is the shape most of them have.
+ */
+const STACKED_MIN_HEIGHT = 30;
 
 /** Matches the dimming the done state used to get from CSS opacity. */
 const DONE_DIM = 0.75;
 
+/**
+ * Darker than the live fill, and not the 0.75 of a done block: the signal that
+ * a touch has been held long enough for the block to follow the finger.
+ */
+export const ARMED_DIM = 0.7;
+
 type Props = {
   occurrence: ResolvedOccurrence;
   isToday: boolean;
+  pixelsPerHour: number;
   onTap: (occurrence: ResolvedOccurrence) => void;
   onToggleTimer: (occurrence: ResolvedOccurrence) => void;
 };
 
-export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Props) {
-  const drag = useBlockDrag(occurrence, () => onTap(occurrence));
+export function TimeBlockView({ occurrence, isToday, pixelsPerHour, onTap, onToggleTimer }: Props) {
+  const drag = useBlockDrag(occurrence, pixelsPerHour, () => onTap(occurrence));
   const clickFromGesture = useRef(false);
 
   const startMinute =
@@ -42,15 +65,19 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
     wallClockMinutesBetween(occurrence.displayStart, occurrence.displayEnd, occurrence.date) +
     drag.extraMinutes;
 
-  const height = Math.max(minuteToPixel(durationMinutes), MIN_BLOCK_HEIGHT);
+  const height = Math.max(minuteToPixel(durationMinutes, pixelsPerHour), MIN_BLOCK_HEIGHT);
   // Drawn at its true start and left to overflow the day section, which does not
   // clip: a block that runs into the next day is one rectangle crossing the seam,
   // not two. Sliding it up to fit is what used to draw a 23:50 session at 23:30.
-  const top = minuteToPixel(startMinute);
+  const top = minuteToPixel(startMinute, pixelsPerHour);
 
   const baseColor = occurrence.project?.color ?? NO_PROJECT_COLOR;
   const background =
-    occurrence.status === 'done' ? dimTowardPage(baseColor, DONE_DIM) : baseColor;
+    occurrence.status === 'done'
+      ? dimTowardPage(baseColor, DONE_DIM)
+      : drag.armed
+        ? dimTowardPage(baseColor, ARMED_DIM)
+        : baseColor;
 
   function onBodyPointerDown(event: ReactPointerEvent<HTMLElement>) {
     clickFromGesture.current = false;
@@ -118,15 +145,19 @@ export function TimeBlockView({ occurrence, isToday, onTap, onToggleTimer }: Pro
         onPointerCancel={onPointerCancel}
       />
 
-      {/* One line, title first: two stacked lines are what forced the old 30px floor. */}
-      <div className="block__text">
-        <span className="block__title">{occurrence.title}</span>
-        <span className="block__time">
-          {formatTime(labelStart)} - {formatTime(labelEnd)}
-        </span>
-      </div>
+      {height >= TEXT_MIN_HEIGHT && (
+        /* One line, title first: two stacked lines are what forced the old 30px floor. */
+        <div className="block__text">
+          <span className="block__title">{occurrence.title}</span>
+          <span className="block__time">
+            {formatTime(labelStart)} - {formatTime(labelEnd)}
+          </span>
+        </div>
+      )}
 
-      {occurrence.status !== 'done' && (isToday || occurrence.status === 'running') && (
+      {height >= TIMER_MIN_HEIGHT &&
+        occurrence.status !== 'done' &&
+        (isToday || occurrence.status === 'running') && (
         <button
           className="block__timer"
           aria-label={occurrence.status === 'running' ? 'Stop' : 'Start'}

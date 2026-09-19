@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
+import { clampScale, DEFAULT_PIXELS_PER_HOUR } from '../domain/geometry';
 import { toDateKey } from '../domain/dates';
 import { newId, resolveConcurrentTimers, startTimer, stopTimer } from '../domain/timer';
 import type { BlockOverride, BlockPlan, Project } from '../domain/types';
 import * as apiClient from '../storage/apiClient';
 import { isFailure, type Account, type ApiFailure } from '../storage/apiClient';
+import { readZoom, writeZoom } from '../storage/preferences';
 import { repository } from '../storage/repository';
 import { inspectFirstSync, settleFirstSync, signOut, syncOnce, type SignOutOutcome } from '../storage/sync';
 import { takeEmailLink, type EmailLink } from './emailLink';
@@ -20,6 +22,21 @@ export type AppState = {
   now: Date;
   /** The day currently on screen; the add button creates blocks here. */
   visibleDate: string;
+  /**
+   * The hour scale of the calendar, in pixels per hour. UI state, like `tab`:
+   * it is read on every render of every day section, so it lives here and not
+   * behind a function that would recompute it.
+   */
+  pixelsPerHour: number;
+  /**
+   * Bumped the instant a second pointer joins the calendar. A block with a drag
+   * in progress watches this and gives the gesture up: the pinch owns it, and a
+   * drag that survived would read its pixel delta at a scale that did not
+   * measure it. Pinch handlers are bound in capture on the scroller; the block
+   * still needs this counter because its drag lives in a hook that cannot see
+   * the scroller's pointer map. This project has no React context.
+   */
+  gestureAbort: number;
   /**
    * Which of the four things the app is showing. Not derived on the fly: the
    * first-sync question costs a request to work out, and a component that
@@ -46,6 +63,8 @@ let state: AppState = {
   overrides: [],
   now: new Date(),
   visibleDate: toDateKey(new Date()),
+  pixelsPerHour: DEFAULT_PIXELS_PER_HOUR,
+  gestureAbort: 0,
   entry: 'deciding',
   firstSync: null,
   link: null,
@@ -79,7 +98,14 @@ export async function loadAll(): Promise<void> {
     repository.listPlans(),
     repository.listOverrides(),
   ]);
-  setState({ projects, plans, overrides, loaded: true, now: new Date() });
+  setState({
+    projects,
+    plans,
+    overrides,
+    loaded: true,
+    now: new Date(),
+    pixelsPerHour: readZoom(),
+  });
 }
 
 export async function decideEntry(): Promise<void> {
@@ -202,6 +228,20 @@ export async function signOutOfDevice(answer: 'discard' | null): Promise<SignOut
 
 export function setTab(tab: TabId): void {
   setState({ tab });
+}
+
+/**
+ * The scale is clamped here and not at the call sites, so no input — keyboard,
+ * wheel or fingers — can put a value outside the range into the state.
+ */
+export function setZoom(pixelsPerHour: number): void {
+  const next = clampScale(pixelsPerHour);
+  setState({ pixelsPerHour: next });
+  writeZoom(next);
+}
+
+export function abortGestures(): void {
+  setState({ gestureAbort: state.gestureAbort + 1 });
 }
 
 export function setVisibleDate(visibleDate: string): void {

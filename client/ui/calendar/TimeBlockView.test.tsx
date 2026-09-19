@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addDays, dateKeyToMidnight } from '../../domain/dates';
+import { DEFAULT_PIXELS_PER_HOUR } from '../../domain/geometry';
 import { resolveOccurrence } from '../../domain/recurrence';
 import type { BlockPlan, ResolvedOccurrence } from '../../domain/types';
 import { TimeBlockView } from './TimeBlockView';
@@ -36,7 +37,7 @@ function doneBlockOn(date: string, month: number, day: number): ResolvedOccurren
 
 function draw(occurrence: ResolvedOccurrence) {
   const { container } = render(
-    <TimeBlockView occurrence={occurrence} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+    <TimeBlockView occurrence={occurrence} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
   );
   const block = container.querySelector<HTMLElement>('.block');
   if (!block) throw new Error('no block rendered');
@@ -56,14 +57,14 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(hoursIn('2026-09-03')).toBe(24);
   });
 
-  // 128px is two hours at 64px/hour: the distance between the 01:30 and 03:30 marks.
-  const TWO_HOURS = '128px';
+  // 120px is two hours at 60px/hour: the distance between the 01:30 and 03:30 marks.
+  const TWO_HOURS = '120px';
 
   it('on an ordinary day', () => {
     expect(draw(doneBlockOn('2026-09-03', 8, 3))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
-      top: '96px',
+      top: '90px',
     });
   });
 
@@ -77,7 +78,7 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-10-25', 9, 25))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
-      top: '96px',
+      top: '90px',
     });
   });
 
@@ -92,7 +93,7 @@ describe('TimeBlockView draws a tracked block by the wall clock', () => {
     expect(draw(doneBlockOn('2026-03-29', 2, 29))).toEqual({
       label: '1:30 - 3:30',
       height: TWO_HOURS,
-      top: '96px',
+      top: '90px',
     });
   });
 });
@@ -125,14 +126,14 @@ function scheduledBlockOn(date: string, month: number, day: number): ResolvedOcc
 describe('TimeBlockView draws a planned block at its planned length', () => {
   afterEach(cleanup);
 
-  // 192px is three hours at 64px/hour: the distance between the 01:00 and 04:00 marks.
-  const THREE_HOURS = '192px';
+  // 180px is three hours at 60px/hour: the distance between the 01:00 and 04:00 marks.
+  const THREE_HOURS = '180px';
 
   it('on an ordinary day', () => {
     expect(draw(scheduledBlockOn('2026-10-18', 9, 18))).toEqual({
       label: '1:00 - 4:00',
       height: THREE_HOURS,
-      top: '64px',
+      top: '60px',
     });
   });
 
@@ -140,7 +141,7 @@ describe('TimeBlockView draws a planned block at its planned length', () => {
     expect(draw(scheduledBlockOn('2026-10-25', 9, 25))).toEqual({
       label: '1:00 - 4:00',
       height: THREE_HOURS,
-      top: '64px',
+      top: '60px',
     });
   });
 
@@ -148,7 +149,7 @@ describe('TimeBlockView draws a planned block at its planned length', () => {
     expect(draw(scheduledBlockOn('2026-03-29', 2, 29))).toEqual({
       label: '1:00 - 4:00',
       height: THREE_HOURS,
-      top: '64px',
+      top: '60px',
     });
   });
 });
@@ -173,24 +174,24 @@ describe('a block that runs past midnight overflows its day instead of moving', 
   afterEach(cleanup);
 
   it('starts at its true minute and keeps its whole length', () => {
-    // 23:50 is 1430 minutes in, and 1430/60*64 is 1525.33: where 23:50 actually is.
+    // 23:50 is 1430 minutes in, and at one pixel a minute that is pixel 1430.
     // The old clamp answered 1493.33 here, which is 23:20 — half an hour early.
     expect(draw(crossing)).toEqual({
       label: '11:50 - 12:20',
-      height: '32px',
-      top: '1525.3333333333333px',
+      height: '30px',
+      top: '1430px',
     });
   });
 
   it('is one rectangle, drawn once, that reaches past the end of its day', () => {
     const { container } = render(
-      <TimeBlockView occurrence={crossing} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+      <TimeBlockView occurrence={crossing} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
     );
     expect(container.querySelectorAll('.block')).toHaveLength(1);
     const block = container.querySelector<HTMLElement>('.block');
-    // DAY_HEIGHT is 1536; the last half hour of this block is drawn below it.
+    // 1440 is a full day at the default scale; the last half hour of this block is drawn below it.
     expect(parseFloat(block!.style.top) + parseFloat(block!.style.height)).toBeGreaterThan(
-      1536,
+      1440,
     );
   });
 });
@@ -210,7 +211,7 @@ describe('TimeBlockView accessible name includes the half of the clock', () => {
 
   it('names a crossing block with both meridiems, without changing the painted time', () => {
     render(
-      <TimeBlockView occurrence={crossing} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+      <TimeBlockView occurrence={crossing} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
     );
     expect(
       screen.getByRole('button', { name: 'Late session, 11:50 PM - 12:20 AM' }),
@@ -220,9 +221,87 @@ describe('TimeBlockView accessible name includes the half of the clock', () => {
 
   it('names a lunch block with AM then PM, so the meridiem is not a midnight special', () => {
     render(
-      <TimeBlockView occurrence={lunch} isToday={false} onTap={() => {}} onToggleTimer={() => {}} />,
+      <TimeBlockView occurrence={lunch} isToday={false} pixelsPerHour={DEFAULT_PIXELS_PER_HOUR} onTap={() => {}} onToggleTimer={() => {}} />,
     );
     expect(screen.getByRole('button', { name: 'Lunch, 11:30 AM - 12:15 PM' })).toBeTruthy();
     expect(document.querySelector('.block__time')?.textContent).toBe('11:30 - 12:15');
+  });
+});
+
+function shortBlock(durationMinutes: number): ResolvedOccurrence {
+  return {
+    planId: 'p1',
+    date: '2026-09-17',
+    title: 'Stretch',
+    project: null,
+    status: 'scheduled',
+    displayStart: new Date(2026, 8, 17, 10, 0),
+    displayEnd: new Date(2026, 8, 17, 10, durationMinutes),
+  };
+}
+
+function drawAt(occurrence: ResolvedOccurrence, pixelsPerHour: number) {
+  const { container } = render(
+    <TimeBlockView
+      occurrence={occurrence}
+      isToday={true}
+      pixelsPerHour={pixelsPerHour}
+      onTap={() => {}}
+      onToggleTimer={() => {}}
+    />,
+  );
+  const block = container.querySelector<HTMLElement>('.block');
+  if (!block) throw new Error('no block rendered');
+  return {
+    height: block.style.height,
+    hasText: block.querySelector('.block__text') !== null,
+    hasTimer: block.querySelector('.block__timer') !== null,
+    stacked: block.classList.contains('block--stacked'),
+  };
+}
+
+describe('what a block draws depends on how tall it is, not on the zoom', () => {
+  afterEach(cleanup);
+
+  it('keeps a five-minute block visible and says nothing else', () => {
+    // 5 minutes at 30px/hour is 2.5px; the floor holds it at 5 so it is still seen.
+    expect(drawAt(shortBlock(5), 30)).toEqual({
+      height: '5px',
+      hasText: false,
+      hasTimer: false,
+      stacked: false,
+    });
+  });
+
+  it('adds the text at 18px, where one line stays legible', () => {
+    // 18 minutes at 60px/hour is 18px.
+    expect(drawAt(shortBlock(18), 60)).toEqual({
+      height: '18px',
+      hasText: true,
+      hasTimer: false,
+      stacked: false,
+    });
+  });
+
+  it('withholds the stopwatch one pixel below the 24 WCAG 2.5.8 asks for', () => {
+    expect(drawAt(shortBlock(23), 60).hasTimer).toBe(false);
+    expect(drawAt(shortBlock(24), 60).hasTimer).toBe(true);
+  });
+
+  it('offers the stopwatch to a short block once the zoom makes room', () => {
+    // A quarter hour is 15px at 60 and 24px at 96: the same block, zoomed.
+    expect(drawAt(shortBlock(15), 60).hasTimer).toBe(false);
+    expect(drawAt(shortBlock(15), 96).hasTimer).toBe(true);
+  });
+
+  it('gives a 48-minute block its stopwatch even at the smallest scale', () => {
+    // 48 minutes at 30px/hour is 24px. A rule by zoom level would have taken
+    // the button from a block with room for it.
+    expect(drawAt(shortBlock(48), 30).hasTimer).toBe(true);
+  });
+
+  it('stacks the two lines from half an hour at the default scale', () => {
+    expect(drawAt(shortBlock(29), 60).stacked).toBe(false);
+    expect(drawAt(shortBlock(30), 60).stacked).toBe(true);
   });
 });

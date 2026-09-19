@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_PIXELS_PER_HOUR } from '../../domain/geometry';
 import { DaySection } from './DaySection';
 
 afterEach(cleanup);
@@ -12,6 +13,7 @@ describe('DaySection gutter heading', () => {
     render(
       <DaySection
         date="2026-09-16"
+        pixelsPerHour={DEFAULT_PIXELS_PER_HOUR}
         occurrences={[]}
         now={new Date(2026, 8, 15, 12, 0)}
         onBackgroundTap={noop}
@@ -29,6 +31,7 @@ describe('DaySection gutter heading', () => {
     render(
       <DaySection
         date="2026-09-15"
+        pixelsPerHour={DEFAULT_PIXELS_PER_HOUR}
         occurrences={[]}
         now={new Date(2026, 8, 15, 12, 0)}
         onBackgroundTap={noop}

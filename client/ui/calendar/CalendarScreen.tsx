@@ -1,8 +1,10 @@
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { minutesSinceMidnight, toDateKey } from '../../domain/dates';
+import { DEFAULT_PIXELS_PER_HOUR } from '../../domain/geometry';
+import { steppedScale, wheelScale } from '../../domain/zoom';
 import { indexOverrides, occurrencesForDay } from '../../domain/recurrence';
 import { reportError } from '../../reportError';
-import { startTimerFor, stopRunningTimer, useAppState } from '../../state/store';
+import { getState, startTimerFor, stopRunningTimer, useAppState } from '../../state/store';
 import { formatDayHeading } from '../format';
 import { DatePickerSheet } from '../sheets/DatePickerSheet';
 import { DaySection } from './DaySection';
@@ -16,7 +18,18 @@ type Props = {
 export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
   const state = useAppState();
   const today = toDateKey(state.now);
-  const { days, visibleDate, scrollRef, onScroll, goTo } = useInfiniteDays(today);
+  const {
+    days,
+    visibleDate,
+    scrollRef,
+    onScroll,
+    goTo,
+    zoomTo,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  } = useInfiniteDays(today, state.pixelsPerHour);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Layout effect, not effect: positioning after the first paint shows the top of
@@ -37,6 +50,35 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
     [state.projects],
   );
 
+  // Not React's onWheel: React 19 registers it passive, and a passive listener
+  // cannot cancel the browser's own page zoom. Without preventDefault, Ctrl
+  // plus wheel would zoom the page and the calendar at the same time.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    function onWheel(event: WheelEvent) {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const el = scrollRef.current;
+      if (!el) return;
+      // deltaMode 1 is lines and 2 is pages; Firefox sends both. Unnormalised,
+      // a deltaY of 3 lines would read as 3 pixels and the wheel would do
+      // almost nothing.
+      const LINE_HEIGHT = 16;
+      const factor =
+        event.deltaMode === 1 ? LINE_HEIGHT : event.deltaMode === 2 ? el.clientHeight : 1;
+      const bounds = el.getBoundingClientRect();
+      zoomTo(
+        wheelScale(getState().pixelsPerHour, event.deltaY * factor),
+        event.clientY - bounds.top,
+      );
+    }
+
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [zoomTo, scrollRef]);
+
   return (
     <div className="calendar">
       <header className="calendar__bar">
@@ -52,11 +94,44 @@ export function CalendarScreen({ onCreateBlock, onEditBlock }: Props) {
         </button>
       </header>
 
-      <div className="calendar__scroll" ref={scrollRef} onScroll={onScroll}>
+      {/* The block's begin() stops the bubble, so the first finger would never join the
+          pinch map; capture still sees it because this node is an ancestor of the block. */}
+      <div
+        className="calendar__scroll"
+        ref={scrollRef}
+        onScroll={onScroll}
+        onPointerDownCapture={onPointerDown}
+        onPointerMoveCapture={onPointerMove}
+        onPointerUpCapture={onPointerUp}
+        onPointerCancelCapture={onPointerCancel}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          // On the container and not on the document: Sheet's own listener only
+          // acts on Escape and Tab and lets the rest through, so a document
+          // listener would zoom behind the editor while a title with a `+` is
+          // being typed.
+          if (event.ctrlKey || event.metaKey || event.altKey) return;
+          if (event.key === '+' || event.key === '=') {
+            event.preventDefault();
+            zoomTo(steppedScale(state.pixelsPerHour, 1), null);
+            return;
+          }
+          if (event.key === '-') {
+            event.preventDefault();
+            zoomTo(steppedScale(state.pixelsPerHour, -1), null);
+            return;
+          }
+          if (event.key === '0') {
+            event.preventDefault();
+            zoomTo(DEFAULT_PIXELS_PER_HOUR, null);
+          }
+        }}
+      >
         {days.map((date) => (
           <DaySection
             key={date}
             date={date}
+            pixelsPerHour={state.pixelsPerHour}
             now={state.now}
             onBackgroundTap={onCreateBlock}
             onOccurrenceTap={(occurrence) =>
