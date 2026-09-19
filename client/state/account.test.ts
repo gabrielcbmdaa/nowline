@@ -1,0 +1,209 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
+
+vi.mock('../storage/sync', () => ({
+  inspectFirstSync: vi.fn(),
+  settleFirstSync: vi.fn(),
+  syncOnce: vi.fn(),
+  signOut: vi.fn(),
+}));
+
+import * as apiClient from '../storage/apiClient';
+import { repository } from '../storage/repository';
+import { inspectFirstSync, signOut } from '../storage/sync';
+import {
+  decideEntry,
+  getState,
+  loadAccount,
+  loadAll,
+  changeAccountEmail,
+  resendConfirmation,
+  setTab,
+  signOutOfDevice,
+} from './store';
+
+const look = inspectFirstSync as Mock;
+const leave = signOut as Mock;
+
+const ana = { userId: 'u1', email: 'ana@example.com', verifiedAt: null };
+
+async function signedInAndReady(): Promise<void> {
+  await repository.writeSyncState({ token: 'abc', userId: 'u1', cursor: 'T1', joined: true });
+  look.mockResolvedValue({ kind: 'already-joined' });
+  await decideEntry();
+  expect(getState().entry).toBe('ready');
+}
+
+describe('the account tab', () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    look.mockReset();
+    leave.mockReset();
+    await loadAll();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('asks the server once who the token belongs to, and keeps the answer', async () => {
+    await signedInAndReady();
+    const me = vi.spyOn(apiClient, 'me').mockResolvedValue(ana);
+
+    await loadAccount();
+
+    expect(me).toHaveBeenCalledWith('abc');
+    expect(getState().account).toEqual(ana);
+    expect(getState().accountFailure).toBeNull();
+  });
+
+  it('keeps the failure when the server did not answer, so the tab can say so', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ failed: true, kind: 'offline', status: null, detail: null });
+
+    await loadAccount();
+
+    expect(getState().account).toBeNull();
+    expect(getState().accountFailure).toEqual({ failed: true, kind: 'offline', status: null, detail: null });
+    expect(getState().entry).toBe('ready');
+  });
+
+  it('sends the owner to sign in when the session is over', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'me').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+
+    await loadAccount();
+
+    // Same rule as a rejected round: the calendar would never sync again.
+    expect(getState().entry).toBe('signed-out');
+    expect(getState().account).toBeNull();
+  });
+
+  it('does not ask at all when the engine already dropped the token', async () => {
+    await signedInAndReady();
+    await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    const me = vi.spyOn(apiClient, 'me');
+
+    await loadAccount();
+
+    expect(me).not.toHaveBeenCalled();
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('leaves the account on this device, and decides the entry again from the calendar tab', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'me').mockResolvedValue(ana);
+    await loadAccount();
+    setTab('account');
+    leave.mockImplementation(async () => {
+      await repository.writeSyncState({ token: null, userId: null, cursor: null, joined: false });
+      return { kind: 'signed-out' };
+    });
+
+    expect(await signOutOfDevice(null)).toEqual({ kind: 'signed-out' });
+
+    expect(leave).toHaveBeenCalledWith(null);
+    expect(getState().entry).toBe('signed-out');
+    expect(getState().account).toBeNull();
+    // Whoever signs in next starts on the calendar, not on the tab that was left.
+    expect(getState().tab).toBe('calendar');
+  });
+
+  it('hands the question back without changing anything, and carries the answer through', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'me').mockResolvedValue(ana);
+    await loadAccount();
+    setTab('account');
+    leave.mockResolvedValue({ kind: 'at-risk', atRisk: 3 });
+
+    expect(await signOutOfDevice(null)).toEqual({ kind: 'at-risk', atRisk: 3 });
+
+    expect(getState().entry).toBe('ready');
+    expect(getState().tab).toBe('account');
+    expect(getState().account).toEqual(ana);
+
+    leave.mockResolvedValue({ kind: 'offline' });
+    expect(await signOutOfDevice('discard')).toEqual({ kind: 'offline' });
+    expect(leave).toHaveBeenLastCalledWith('discard');
+    expect(getState().entry).toBe('ready');
+
+    leave.mockResolvedValue({ kind: 'refused', status: 500 });
+    expect(await signOutOfDevice(null)).toEqual({ kind: 'refused', status: 500 });
+    expect(getState().entry).toBe('ready');
+    expect(getState().tab).toBe('account');
+    expect(getState().account).toEqual(ana);
+  });
+
+  it('asks for the confirmation again with the token, and hands the answer to the tab', async () => {
+    await signedInAndReady();
+    const send = vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({ sent: true });
+
+    expect(await resendConfirmation()).toEqual({ sent: true });
+
+    expect(send).toHaveBeenCalledWith('abc');
+    expect(getState().entry).toBe('ready');
+  });
+
+  it('signs the device out when the confirmation request meets a dead session', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'sendConfirmation').mockResolvedValue({
+      failed: true,
+      kind: 'unauthorized',
+      status: 401,
+      detail: null,
+    });
+
+    expect(await resendConfirmation()).toEqual({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('does not ask to resend when the engine already dropped the token', async () => {
+    await signedInAndReady();
+    await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    const send = vi.spyOn(apiClient, 'sendConfirmation');
+
+    expect(await resendConfirmation()).toBeNull();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('asks to change the email with the current password, and keeps the device signed in on a 403', async () => {
+    await signedInAndReady();
+    const change = vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({
+      failed: true,
+      kind: 'refused',
+      status: 403,
+      detail: { error: 'wrong password' },
+    });
+
+    const result = await changeAccountEmail('new@example.com', 'typo');
+
+    expect(change).toHaveBeenCalledWith('abc', 'new@example.com', 'typo');
+    expect(result).toEqual({ failed: true, kind: 'refused', status: 403, detail: { error: 'wrong password' } });
+    // A typo on "Change email" must not end the session; that is what 403 is for.
+    expect(getState().entry).toBe('ready');
+  });
+
+  it('signs the device out when the change request meets a dead session', async () => {
+    await signedInAndReady();
+    vi.spyOn(apiClient, 'changeEmail').mockResolvedValue({ failed: true, kind: 'unauthorized', status: 401, detail: null });
+
+    await changeAccountEmail('new@example.com', 'the-current-password');
+
+    expect(getState().entry).toBe('signed-out');
+  });
+
+  it('does not ask to change the email when the engine already dropped the token', async () => {
+    await signedInAndReady();
+    await repository.writeSyncState({ token: null, userId: 'u1', cursor: 'T1', joined: true });
+    const change = vi.spyOn(apiClient, 'changeEmail');
+
+    expect(await changeAccountEmail('new@example.com', 'the-current-password')).toBeNull();
+
+    expect(change).not.toHaveBeenCalled();
+    expect(getState().entry).toBe('signed-out');
+  });
+});

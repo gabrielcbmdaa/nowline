@@ -1,72 +1,17 @@
 import { useState, type JSX, type SubmitEvent } from 'react';
-import { reportError, reportWarning } from '../reportError';
-import { isFailure, login, logout, type ApiFailure, type Session } from '../storage/apiClient';
-import { adoptSession, type AdoptAnswer, type AdoptQuestion } from '../storage/sync';
-import { OtherAccountPrompt } from './OtherAccountPrompt';
+import { isFailure, login } from '../storage/apiClient';
+import { failureMessage } from './failureMessage';
+import type { GateView } from './gate';
+import { useSessionHandoff } from './useSessionHandoff';
 
-type Props = { onSignedIn: () => void };
+type Props = { onSignedIn: () => void; onSwitch: (to: GateView) => void };
 
-function failureMessage(failure: ApiFailure): string {
-  if (failure.kind === 'unauthorized') {
-    return 'The username or password is wrong.';
-  }
-  if (failure.kind === 'offline') {
-    return 'No answer from the server. Check your connection.';
-  }
-  if (failure.status === 429) {
-    return 'Too many attempts. Try again in a few minutes.';
-  }
-  return `The server did not accept the request (${String(failure.status)}).`;
-}
-
-export function SignInScreen({ onSignedIn }: Props): JSX.Element {
-  const [username, setUsername] = useState('');
+export function SignInScreen({ onSignedIn, onSwitch }: Props): JSX.Element {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [asking, setAsking] = useState<{ session: Session; question: AdoptQuestion } | null>(null);
-
-  /**
-   * The engine decides what a session means for the rows on this device; this
-   * screen only shows the question when there is one. Writing the token here,
-   * as this screen used to, is how one account's queue reached another's cloud.
-   */
-  async function hand(session: Session, answer: AdoptAnswer | null): Promise<void> {
-    try {
-      const outcome = await adoptSession(session, answer);
-      if (outcome.kind === 'adopted') {
-        setAsking(null);
-        onSignedIn();
-        return;
-      }
-      setAsking({ session, question: outcome });
-    } catch (adoptError) {
-      reportError('Preparing this device for the session failed', adoptError);
-      setAsking(null);
-      setError('This device could not be prepared. Please try again.');
-    }
-  }
-
-  async function answer(choice: AdoptAnswer) {
-    if (asking === null || submitting) return;
-    setSubmitting(true);
-    try {
-      await hand(asking.session, choice);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function cancel() {
-    if (asking === null) return;
-    const { token } = asking.session;
-    setAsking(null);
-    // Nobody adopted this session, so the server should not keep it alive. The
-    // form comes back either way; a failure is only worth a line in the log.
-    void logout(token).then((result) => {
-      if (isFailure(result)) reportWarning('Revoking a session nobody adopted failed', result);
-    });
-  }
+  const { offer, prompt } = useSessionHandoff({ onAdopted: onSignedIn, onFailed: setError });
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -76,44 +21,34 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
     setError(null);
 
     try {
-      const result = await login(username, password);
+      const result = await login(email, password);
       if (isFailure(result)) {
-        setError(failureMessage(result));
+        setError(failureMessage(result, 'The email or password is wrong.'));
         return;
       }
 
-      await hand(result, null);
+      await offer(result);
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (asking !== null) {
-    return (
-      <OtherAccountPrompt
-        question={asking.question}
-        busy={submitting}
-        onAnswer={(choice) => {
-          void answer(choice);
-        }}
-        onCancel={cancel}
-      />
-    );
-  }
+  if (prompt !== null) return prompt;
 
   return (
     <div className="gate">
       <h1 className="sheet__title">Sign in</h1>
-      <form aria-label="Sign in" onSubmit={(event) => { void handleSubmit(event); }}>
-        <label className="field" htmlFor="sign-in-username">
-          <span className="field__label">Username</span>
+      <form aria-label="Sign in" noValidate onSubmit={(event) => { void handleSubmit(event); }}>
+        <label className="field" htmlFor="sign-in-email">
+          <span className="field__label">Email</span>
           <input
-            id="sign-in-username"
+            id="sign-in-email"
             className="field__input"
-            value={username}
+            type="email"
+            value={email}
             autoComplete="username"
             onChange={(event) => {
-              setUsername(event.target.value);
+              setEmail(event.target.value);
             }}
           />
         </label>
@@ -144,6 +79,26 @@ export function SignInScreen({ onSignedIn }: Props): JSX.Element {
           </button>
         </div>
       </form>
+      <div className="gate__links">
+        <button
+          className="button button--link"
+          type="button"
+          onClick={() => {
+            onSwitch('create');
+          }}
+        >
+          Create account
+        </button>
+        <button
+          className="button button--link"
+          type="button"
+          onClick={() => {
+            onSwitch('forgot');
+          }}
+        >
+          Forgot password?
+        </button>
+      </div>
     </div>
   );
 }

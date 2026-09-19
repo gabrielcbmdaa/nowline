@@ -71,6 +71,68 @@ body {
   flex: 1 1 100%;
 }
 
+.field__with-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field__with-action .field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field__with-action .button {
+  flex: 0 0 auto;
+}
+
+.account {
+  padding: 24px;
+  padding-top: calc(24px + env(safe-area-inset-top));
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.account__row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account__label {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.account__value {
+  margin: 0;
+  font-size: 15px;
+}
+
+.account__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gate__note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.gate__links {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .tabs {
   display: flex;
   flex: 0 0 auto;
@@ -463,6 +525,14 @@ body {
   padding: 6px 12px;
   font-size: 13px;
   border-radius: 10px;
+}
+
+/* A text button: an action that is not the point of the screen. */
+.button--link {
+  border: none;
+  background: none;
+  padding: 8px 0;
+  color: var(--accent);
 }
 
 .month__header {

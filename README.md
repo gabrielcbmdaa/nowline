@@ -4,8 +4,8 @@ A time tracker shaped like a calendar. You plan a block, press play when you act
 start, and press stop when you actually finish — the block moves to the real time and
 shrinks to what really happened. The name is the red line that crosses the current hour.
 
-Mobile first, running on the web for now. Local first on this device, with one account
-kept in sync on the server.
+Mobile first, running on the web for now. Local first on this device, with an account
+kept in sync on the server — anyone can create one with an email address.
 
 ## Running it
 
@@ -17,16 +17,18 @@ the API and for the test suite.
 ```bash
 pnpm install
 pnpm dev              # http://localhost:5124; add --host to open on a phone
-MONGO_URL=mongodb://127.0.0.1:27017 MONGO_DB=nowline_dev pnpm dev:server   # 127.0.0.1:3001
+MONGO_URL=mongodb://127.0.0.1:27017 MONGO_DB=nowline_dev PUBLIC_URL=http://localhost:5124 MAIL_TRANSPORT=console pnpm dev:server   # 127.0.0.1:3001
 pnpm test             # needs MongoDB on 127.0.0.1:27017
 pnpm build            # eslint, both type-checks, then vite build
 pnpm preview          # the production build, on the same origin as dev (stop dev first)
 ```
 
-The server refuses to start without `MONGO_URL` and `MONGO_DB` — it never defaults
-the database name. `pnpm test` writes only to `nowline_test_*` databases on
-127.0.0.1:27017. See [CLAUDE.md](CLAUDE.md) for bringing MongoDB up on this machine,
-including the open-file limit before `mongod`.
+The server refuses to start without `MONGO_URL`, `MONGO_DB`, `PUBLIC_URL` and
+`MAIL_TRANSPORT` — it never defaults the database name or the way email leaves.
+`console` prints every email on the terminal, link included; `zavu` needs
+`MAIL_API_KEY` and `MAIL_SENDER` as well. `pnpm test` writes only to `nowline_test_*`
+databases on 127.0.0.1:27017 and sends nothing. See [CLAUDE.md](CLAUDE.md) for bringing
+MongoDB up on this machine, including the open-file limit before `mongod`.
 
 ## Deploy
 
@@ -40,17 +42,53 @@ calling `/api/sync` against a server that does not know what that is yet.
 
 On the server, the Node process runs from compiled `dist-server/` on `127.0.0.1:3001`,
 behind nginx's `location /api/`; its configuration lives in a `.env` on the machine,
-not in this repository. Create the account with `scripts/create-user.ts`. Host, user
-and path live in repository secrets.
+not in this repository: `MONGO_URL`, `MONGO_DB`, `PORT`, `PUBLIC_URL` (the origin every
+emailed link points at), `MAIL_TRANSPORT=zavu`, `MAIL_API_KEY` and `MAIL_SENDER` (the
+Zavu sender id). Host, user and path live in repository secrets.
+
+The `/api/auth/` routes sit behind an nginx `limit_req` as well — coarse on purpose:
+the real rules live in Express, where they are tested, and this stops a flood before it
+costs Node and Mongo a round trip. In `/etc/nginx/sites-available/nowline`, above the
+`server` block (Ubuntu includes `sites-enabled` inside `http`, so that is the `http`
+context; the zone is named for this site because Switchat's vhost shares it):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=nowline_auth:1m rate=30r/m;
+```
+
+and inside `server`, next to `location /api/` (the longest prefix wins; 503 is nginx's
+default, and the client reads 429 as "too many attempts"):
+
+```nginx
+location /api/auth/ {
+    limit_req zone=nowline_auth burst=10 nodelay;
+    limit_req_status 429;
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
 
 ## How it works
 
 Everything is local first: the calendar reads and writes on this device, and a
-round trip to the server only agrees the two copies. One account holds the rows;
-a device signs in once, and if both sides already have data it asks once what to
-do with the two copies.
+round trip to the server only agrees the two copies. Each account holds its own
+rows. You create one with an email and a password, and confirm the address from
+the link emailed to you; a forgotten password is recovered by a link that only a
+confirmed address receives, and opening a link spends nothing until you press its
+button. A device signs in once, and if both sides already have data it asks once
+what to do with the two copies.
 
-Three tabs: **Calendar**, **Summary**, **Projects**.
+The **Account** tab shows the address on the account and whether it is confirmed, resends
+the confirmation, changes the address (with the current password; the change happens when the
+link is opened), and signs this device out. Signing out uploads first, asks before removing
+anything no cloud has, and asks the server to forget the session before the device is
+emptied — so it needs the network, like an upload does.
+
+Four tabs: **Calendar**, **Summary**, **Projects**, **Account**.
 
 A **project** is nothing but a coloured label. A **block** is a plan: a title, a time, a
 duration and a repeat rule. Pressing **play** on today's block starts a timer; the block
@@ -191,7 +229,7 @@ client/storage/        the repository interface and its localStorage implementat
 client/storage/sync.ts one round: upload what is owed, download what is missing
 client/state/          one module-level store, exposed through useSyncExternalStore
 client/ui/             React components; client/ui/calendar/ is the strip
-server/                Express + MongoDB: POST /api/auth/login, POST /api/sync, GET /api/health
+server/                Express + MongoDB: the /api/auth/ routes (register, login, logout, me, send-confirmation, change-email, request-reset, confirm, reset), POST /api/sync, GET /api/health
 ```
 
 No router, no state library, no CSS framework, no calendar library. React 19, TypeScript,

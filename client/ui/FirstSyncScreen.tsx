@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX } from 'react';
 import { settleFirstSync, type SyncOutcome } from '../storage/sync';
+import { failureMessage } from './failureMessage';
 
 // A double tap is tens of milliseconds; a bounce tap, a few hundred. 1.5 s covers
 // both without the button looking broken.
@@ -13,14 +14,9 @@ type Props = {
 };
 
 function outcomeMessage(outcome: SyncOutcome): string {
-  if (outcome.kind === 'offline') {
-    return 'No answer from the server. Check your connection.';
-  }
-  if (outcome.kind === 'refused') {
-    if (outcome.status === 429) {
-      return 'Too many attempts. Try again in a few minutes.';
-    }
-    return `The server did not accept the request (${String(outcome.status)}).`;
+  if (outcome.kind === 'offline' || outcome.kind === 'refused') {
+    const status = outcome.kind === 'refused' ? outcome.status : null;
+    return failureMessage({ failed: true, kind: outcome.kind, status, detail: null });
   }
   if (outcome.kind === 'needs-first-sync') {
     return 'The first-sync question is still open.';

@@ -12,7 +12,13 @@ export type Reply = { status: number; contentType: string; body: unknown; text: 
 export async function call(
   app: Express,
   path: string,
-  init?: { method?: string; body?: unknown; token?: string; rawBody?: string },
+  init?: {
+    method?: string;
+    body?: unknown;
+    token?: string;
+    rawBody?: string;
+    headers?: Record<string, string>;
+  },
 ): Promise<Reply> {
   const server = app.listen(0);
   try {
@@ -26,6 +32,9 @@ export async function call(
       connection: 'close',
     };
     if (init?.token) headers.authorization = `Bearer ${init.token}`;
+    // Extra headers for what a test has to say about where a request came
+    // from: `x-forwarded-for` and `x-forwarded-host` behind a trusted proxy.
+    Object.assign(headers, init?.headers);
 
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: init?.method ?? 'GET',

@@ -1,12 +1,13 @@
 import type { ComponentType } from 'react';
 import type { TabId } from '../state/store';
-import { CalendarIcon, ProjectsIcon, SummaryIcon, type IconProps } from './icons';
+import { AccountIcon, CalendarIcon, ProjectsIcon, SummaryIcon, type IconProps } from './icons';
 
 /** The label is no longer drawn, but it still names the button for screen readers. */
 const TABS: { id: TabId; label: string; Icon: ComponentType<IconProps> }[] = [
   { id: 'calendar', label: 'Calendar', Icon: CalendarIcon },
   { id: 'summary', label: 'Summary', Icon: SummaryIcon },
   { id: 'projects', label: 'Projects', Icon: ProjectsIcon },
+  { id: 'account', label: 'Account', Icon: AccountIcon },
 ];
 
 type Props = {

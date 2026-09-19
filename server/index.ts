@@ -1,15 +1,28 @@
 import express from 'express';
 import type { Db } from 'mongodb';
+import type { MailConfig, Mailer } from './mail.js';
+import { emailRoute } from './routes/email.js';
 import { loginRoute } from './routes/login.js';
+import { recoveryRoute } from './routes/recovery.js';
+import { registerRoute } from './routes/register.js';
 import { sessionRoute } from './routes/session.js';
 import { syncRoute } from './routes/sync.js';
 
+/** What the routes need beyond the database, and the tests replace. */
+export type AppOptions = { mailer: Mailer; publicUrl: string };
+
 /**
  * The app is built without listening, so a test can ask it for answers
- * without occupying a port. The process below is what binds one.
+ * without occupying a port. The process below is what binds one. The routes
+ * that send email get the mailer from here, never from a module: that is the
+ * seam the tests use to read what would have been sent.
  */
-export function createApp(db: Db): express.Express {
+export function createApp(db: Db, options: AppOptions): express.Express {
   const app = express();
+  // Trust X-Forwarded-For only when the connection itself comes from this
+  // machine, which is where nginx connects from. `true` would let anyone send
+  // the header from outside with a made-up address and dodge every per-IP limit.
+  app.set('trust proxy', 'loopback');
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/api/health', (_request, response) => {
@@ -17,6 +30,9 @@ export function createApp(db: Db): express.Express {
   });
 
   app.use(loginRoute(db));
+  app.use(registerRoute(db, options));
+  app.use(recoveryRoute(db, options));
+  app.use(emailRoute(db, options));
   app.use(sessionRoute(db));
   app.use(syncRoute(db));
 
@@ -40,13 +56,41 @@ export function createApp(db: Db): express.Express {
   return app;
 }
 
-export function readConfig(): { url: string; dbName: string; port: number } {
+export type Config = {
+  url: string;
+  dbName: string;
+  port: number;
+  publicUrl: string;
+  mail: MailConfig;
+};
+
+/**
+ * No variable has a default, for the same reason MONGO_DB never had one: a
+ * server that picks its own database picks the wrong one silently, and one
+ * that picks its own mail transport falls silent without anyone noticing.
+ */
+export function readConfig(): Config {
   const url = process.env.MONGO_URL;
   const dbName = process.env.MONGO_DB;
   if (!url || !dbName) {
-    // Never default the database name: the production one is a plausible guess,
-    // and a server that picks its own database picks the wrong one silently.
     throw new Error('Set MONGO_URL and MONGO_DB before starting the server');
   }
-  return { url, dbName, port: Number(process.env.PORT ?? 3001) };
+  // Every emailed link starts with this, so a trailing slash would double up.
+  const publicUrl = required('PUBLIC_URL').replace(/\/+$/, '');
+  const transport = required('MAIL_TRANSPORT');
+  let mail: MailConfig;
+  if (transport === 'zavu') {
+    mail = { transport, apiKey: required('MAIL_API_KEY'), sender: required('MAIL_SENDER') };
+  } else if (transport === 'console') {
+    mail = { transport };
+  } else {
+    throw new Error(`MAIL_TRANSPORT must be "zavu" or "console", not "${transport}"`);
+  }
+  return { url, dbName, port: Number(process.env.PORT ?? 3001), publicUrl, mail };
+}
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Set ${name} before starting the server`);
+  return value;
 }

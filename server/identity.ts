@@ -10,7 +10,8 @@ import { collections } from './db.js';
 
 const BYTES = 32;
 
-function fingerprint(token: string): string {
+/** Exported for links.ts, which stores an emailed token the way a session is stored. */
+export function fingerprint(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
@@ -48,6 +49,14 @@ export async function revokeToken(db: Db, token: string): Promise<void> {
 export async function revokeSession(db: Db, authorization: string | undefined): Promise<void> {
   const token = readBearer(authorization);
   if (token) await revokeToken(db, token);
+}
+
+/**
+ * Every session of an account, on every device. What a password reset does:
+ * whoever asked for it no longer trusts where the account is signed in.
+ */
+export async function revokeAllFor(db: Db, userId: string): Promise<void> {
+  await collections(db).sessions.deleteMany({ userId });
 }
 
 function readBearer(authorization: string | undefined): string | null {

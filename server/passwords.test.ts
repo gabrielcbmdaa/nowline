@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hashPassword, verifyPassword } from './passwords.js';
+import { hashPassword, truncatesWhenHashed, verifyPassword } from './passwords.js';
 
 describe('passwords', () => {
   it('verifies a password against its own hash', async () => {
@@ -20,5 +20,10 @@ describe('passwords', () => {
     const hash = await hashPassword(plain);
 
     expect(hash).not.toContain(plain);
+  });
+
+  it('knows when bcrypt would silently keep only the first 72 bytes', () => {
+    expect(truncatesWhenHashed('a'.repeat(72))).toBe(false);
+    expect(truncatesWhenHashed('a'.repeat(73))).toBe(true);
   });
 });
